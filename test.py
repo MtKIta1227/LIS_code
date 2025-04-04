@@ -138,6 +138,9 @@ class CyclePlotter(QWidget):
         self.ax.clear()
         colormap = plt.cm.get_cmap('tab10')
 
+        plotted_lines = []
+        plotted_labels = []
+
         for idx, cycle in enumerate(cycles):
             df = self.data_by_cycle[cycle]
             cycle_num = int(cycle)
@@ -148,13 +151,16 @@ class CyclePlotter(QWidget):
             first = True
             for mode in ["DIS", "CHG"]:
                 df_mode = df[df["Mode"] == mode]
-                self.ax.plot(
+                line, = self.ax.plot(
                     df_mode["Capacity(mAh/g)"],
                     df_mode["Voltage(V)"],
                     label=label if first else None,
                     color=color,
                     alpha=alpha_val
                 )
+                if first:
+                    plotted_lines.append(line)
+                    plotted_labels.append(label)
                 first = False
 
         self.ax.set_xlabel("Capacity (mAh/g)")
@@ -162,20 +168,43 @@ class CyclePlotter(QWidget):
         self.ax.set_title("Capacity-Voltage by Cycle")
         self.ax.grid(True)
 
-        # サイクル数に応じて凡例表示方法を切り替え
         if len(cycles) <= 30:
-            # グラフ内に通常表示
             self.ax.legend(loc='best', fontsize="small")
             self.canvas.figure.tight_layout()
         else:
-            # 30超えたら右側に2列で表示
-            self.ax.legend(
-                loc='center left',
-                bbox_to_anchor=(1.0, 0.5),
-                ncol=2,
-                fontsize='small'
-            )
-            self.canvas.figure.tight_layout(rect=[0, 0, 0.85, 1])  # 凡例スペースを確保
+            # 2列に並ぶよう、行優先でラベルを並び替え
+            first_column_lines = []
+            first_column_labels = []
+            second_column_lines = []
+            second_column_labels = []
+
+            for label, line in zip(plotted_labels, plotted_lines):
+                cycle_number = int(label.split()[1])
+                if cycle_number <= 30:
+                    first_column_lines.append(line)
+                    first_column_labels.append(label)
+                else:
+                    second_column_lines.append(line)
+                    second_column_labels.append(label)
+
+            # 行優先2列にするため、行ごとに交互に並べる
+            max_len = max(len(first_column_lines), len(second_column_lines))
+            merged_lines = []
+            merged_labels = []
+            for i in range(max_len):
+                if i < len(first_column_lines):
+                    merged_lines.append(first_column_lines[i])
+                    merged_labels.append(first_column_labels[i])
+                if i < len(second_column_lines):
+                    merged_lines.append(second_column_lines[i])
+                    merged_labels.append(second_column_labels[i])
+
+            self.ax.legend(merged_lines, merged_labels,
+                           loc='center left',
+                           bbox_to_anchor=(1.0, 0.5),
+                           ncol=2,
+                           fontsize='small')
+            self.canvas.figure.tight_layout(rect=[0, 0, 0.85, 1])
 
         self.canvas.draw()
         self.last_plotted_cycles = cycles
