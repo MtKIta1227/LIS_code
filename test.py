@@ -164,23 +164,18 @@ class CyclePlotter(QWidget):
 
         # サイクル数に応じて凡例表示方法を切り替え
         if len(cycles) <= 30:
-            # グラフ内（右上）に凡例表示
+            # グラフ内に通常表示
             self.ax.legend(loc='best', fontsize="small")
             self.canvas.figure.tight_layout()
         else:
-            # サイクル数が多いときは凡例を別ウィンドウに出す
-            from matplotlib.legend import Legend
-
-            fig_legend = plt.figure(figsize=(3, 12))
-            ax_legend = fig_legend.add_subplot(111)
-            lines = self.ax.get_lines()
-            labels = [line.get_label() for line in lines if line.get_label()]
-            legend = Legend(ax_legend, lines, labels, loc='center', fontsize='small')
-            ax_legend.add_artist(legend)
-            ax_legend.axis('off')
-            fig_legend.suptitle("Legend (Cycles)", fontsize=12)
-            fig_legend.tight_layout()
-            fig_legend.show()
+            # 30超えたら右側に2列で表示
+            self.ax.legend(
+                loc='center left',
+                bbox_to_anchor=(1.0, 0.5),
+                ncol=2,
+                fontsize='small'
+            )
+            self.canvas.figure.tight_layout(rect=[0, 0, 0.85, 1])  # 凡例スペースを確保
 
         self.canvas.draw()
         self.last_plotted_cycles = cycles
