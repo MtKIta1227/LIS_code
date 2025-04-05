@@ -2,6 +2,10 @@ import sys
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
+
+# グローバルでフォントを Arial に設定
+plt.rcParams['font.family'] = 'Arial'
+
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QPushButton, QFileDialog,
     QListWidget, QListWidgetItem, QHBoxLayout, QMessageBox, QSplitter, QFrame,
@@ -10,7 +14,15 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
-from matplotlib.ticker import PercentFormatter
+from matplotlib.ticker import FormatStrFormatter, PercentFormatter
+
+def col_idx_to_excel_col(col):
+    """0-indexed の列番号を Excel の列記号 (A, B, ..., Z, AA, ...) に変換する"""
+    result = ""
+    while col >= 0:
+        result = chr((col % 26) + 65) + result
+        col = col // 26 - 1
+    return result
 
 class CyclePlotterWidget(QWidget):
     def __init__(self):
@@ -42,6 +54,8 @@ class CyclePlotterWidget(QWidget):
 
         # ==== Splitter ====
         splitter = QSplitter(Qt.Horizontal)
+        splitter.setHandleWidth(2)
+        splitter.setContentsMargins(0, 0, 0, 0)
         main_layout.addWidget(splitter)
 
         # ==== Left Panel ====
@@ -49,8 +63,7 @@ class CyclePlotterWidget(QWidget):
         left_frame.setFrameShape(QFrame.StyledPanel)
         left_frame.setStyleSheet("background-color: #f9f9f9; border: 1px solid #ccc;")
         left_layout = QVBoxLayout(left_frame)
-        left_layout.setContentsMargins(8, 8, 8, 8)
-
+        left_layout.setContentsMargins(0, 0, 0, 0)
         self.list_widget = QListWidget()
         self.select_all_btn = QPushButton("Select All")
         self.deselect_all_btn = QPushButton("Deselect All")
@@ -59,7 +72,8 @@ class CyclePlotterWidget(QWidget):
         btn_box.addWidget(self.deselect_all_btn)
         left_layout.addWidget(self.list_widget)
         left_layout.addLayout(btn_box)
-        left_frame.setMaximumWidth(180)
+        # リストの横幅を 150 ピクセルに拡大
+        left_frame.setMaximumWidth(150)
         splitter.addWidget(left_frame)
 
         # ==== Right Panel ====
@@ -73,6 +87,7 @@ class CyclePlotterWidget(QWidget):
         self.ax = self.canvas.figure.subplots()
         splitter.addWidget(right_frame)
         splitter.setStretchFactor(1, 5)
+        splitter.setSizes([150, 900])
 
         # ==== Bottom Buttons ====
         bottom_buttons = QHBoxLayout()
@@ -93,7 +108,6 @@ class CyclePlotterWidget(QWidget):
         self.deselect_all_btn.clicked.connect(self.deselect_all_items)
 
     def update_status(self, message):
-        # 親ウィンドウが QMainWindow であれば組み込みの statusBar() を更新
         main_window = self.window()
         if isinstance(main_window, QMainWindow):
             main_window.statusBar().showMessage(message)
@@ -113,7 +127,6 @@ class CyclePlotterWidget(QWidget):
             self.window().setWindowTitle(self.current_folder)
             files = [os.path.join(self.current_folder, f) for f in os.listdir(self.current_folder) if f.endswith(".CSV")]
             total_files = len(files)
-            # 進捗表示用に QProgressBar を取得（MainWindow の statusBar に追加済みのもの）
             main_window = self.window()
             progress_bar = None
             if isinstance(main_window, QMainWindow):
@@ -124,7 +137,6 @@ class CyclePlotterWidget(QWidget):
                 progress_bar.setMaximum(total_files)
                 progress_bar.setValue(0)
                 progress_bar.setVisible(True)
-
             loaded_files = 0
             for file in sorted(files):
                 cycle = os.path.splitext(os.path.basename(file))[0]
@@ -144,7 +156,6 @@ class CyclePlotterWidget(QWidget):
                     progress_bar.setValue(loaded_files)
             if progress_bar:
                 progress_bar.setVisible(False)
-
             file_count = len(files)
             cycle_count = len(self.data_by_cycle)
             self.update_status(f"Loaded Folder: {self.current_folder} | ファイル: {file_count}個, サイクル: {cycle_count}個")
@@ -166,19 +177,14 @@ class CyclePlotterWidget(QWidget):
     def plot_data(self, cycles):
         self.ax.clear()
         self.clear_right_axis()
-
         cmap = plt.cm.get_cmap("tab10")
-        total_cycles = len(cycles)
-        for idx, cycle in enumerate(cycles):
+        for cycle in cycles:
             df = self.data_by_cycle[cycle]
             cycle_num = int(cycle)
-
             group_index = cycle_num // 10
             within_group = cycle_num % 10
-
             color = cmap(group_index % cmap.N)
             alpha = 1.0 - 0.1 * within_group
-
             label = f"Cycle {cycle}"
             first = True
             for mode in ["DIS", "CHG"]:
@@ -192,21 +198,22 @@ class CyclePlotterWidget(QWidget):
                 )
                 first = False
 
-        self.ax.set_xlabel("Capacity (mAh/g)")
-        self.ax.set_ylabel("Voltage (V)")
-        self.ax.set_title("Capacity-Voltage by Cycle")
-        self.ax.grid(True)
-        self.ax.legend(
-            loc="lower left",
-            bbox_to_anchor=(1.0, 0),
-            fontsize="small",
-            frameon=True,
-            ncol=2 if len(cycles) > 30 else 1
-        )
+        self.ax.set_xlabel("Capacity (mAh/g)", fontname="Arial")
+        self.ax.set_ylabel("Voltage (V)", fontname="Arial")
+        self.ax.set_title("Capacity-Voltage by Cycle", fontname="Arial")
+        self.ax.tick_params(axis='both', direction='in', colors='black')
+        self.ax.yaxis.set_major_formatter(FormatStrFormatter('%.1f'))
+        
+        if len(cycles) < 31:
+            self.ax.legend(loc="upper right", fontsize="small", frameon=True, ncol=1)
+        else:
+            self.ax.legend(loc="lower left", bbox_to_anchor=(1.0, 0),
+                           fontsize="small", frameon=True, ncol=2)
+        
         self.canvas.figure.tight_layout(rect=[0, 0, 0.85, 1])
         self.canvas.draw()
         self.last_plotted_cycles = cycles
-        self.update_status(f"プロット完了: {total_cycles} サイクル表示中")
+        self.update_status(f"プロット完了: {len(cycles)} サイクル表示中")
 
     def select_all_items(self):
         for i in range(self.list_widget.count()):
@@ -220,11 +227,9 @@ class CyclePlotterWidget(QWidget):
         self.ax.clear()
         self.clear_right_axis()
         self.efficiency_data = []
-
         cycles = []
         max_dis_caps = []
         efficiencies = []
-
         for cycle in sorted(self.data_by_cycle.keys(), key=lambda x: int(x)):
             df = self.data_by_cycle[cycle]
             dis_df = df[df["Mode"] == "DIS"]
@@ -237,30 +242,24 @@ class CyclePlotterWidget(QWidget):
                 max_dis_caps.append(dis_max)
                 efficiencies.append(eff)
                 self.efficiency_data.append((int(cycle), dis_max, eff))
-
-        self.ax.set_title("Max DIS Capacity & Coulombic Efficiency")
-        self.ax.set_xlabel("Cycle Number")
-        self.ax.set_ylabel("Max DIS Capacity (mAh/g)", color="blue")
-        ln1 = self.ax.plot(cycles, max_dis_caps, color="blue", label="Max DIS Capacity", marker='o')
-        self.ax.tick_params(axis='y', labelcolor="blue")
-        self.ax.grid(True)
-
+        self.ax.set_title("Max DIS Capacity & Coulombic Efficiency", fontname="Arial")
+        self.ax.set_xlabel("Cycle Number", fontname="Arial")
+        self.ax.set_ylabel("Max DIS Capacity (mAh/g)", fontname="Arial", color="dodgerblue")
+        ln1 = self.ax.plot(cycles, max_dis_caps, color="dodgerblue", label="Max DIS Capacity", marker='o')[0]
+        self.ax.set_ylim(0, 1.2 * max(max_dis_caps))
+        self.ax.tick_params(axis='both', direction='in', colors="k")
+        self.ax.yaxis.set_major_formatter(FormatStrFormatter('%.0f'))
         self.ax2 = self.ax.twinx()
-        self.ax2.set_ylabel("Coulombic Efficiency (%)", color="orange")
-        ln2 = self.ax2.plot(
-            cycles,
-            [e * 100 for e in efficiencies],
-            color="orange",
-            label="Efficiency",
-            marker='x'
-        )
-        self.ax2.tick_params(axis='y', labelcolor="orange")
+        self.ax2.set_ylabel("Coulombic Efficiency (%)", fontname="Arial", color="darkorange")
+        ln2 = self.ax2.plot(cycles, [e * 100 for e in efficiencies], color="darkorange",
+                            label="Efficiency", marker='x')[0]
+        self.ax2.tick_params(axis='both', direction='in', colors="darkorange")
         self.ax2.set_ylim(0, 110)
         self.ax2.yaxis.set_major_formatter(PercentFormatter())
-
-        lines = ln1 + ln2
+        lines = [ln1, ln2]
         labels = [line.get_label() for line in lines]
-        self.ax.legend(lines, labels, loc="best", fontsize="small", frameon=True)
+        self.ax.legend(lines, labels, loc="upper center", bbox_to_anchor=(0.5, -0.15),
+                       fontsize="small", frameon=True, ncol=2)
         self.canvas.figure.tight_layout(rect=[0, 0, 0.85, 1])
         self.canvas.draw()
         self.update_status("DIS容量とクーロン効率を表示しました")
@@ -269,18 +268,18 @@ class CyclePlotterWidget(QWidget):
         if not self.last_plotted_cycles:
             QMessageBox.warning(self, "No Data", "プロットされたデータがありません")
             return
-
-        path, _ = QFileDialog.getSaveFileName(self, "Save Excel File", filter="Excel Files (*.xlsx)")
+        default_name = os.path.basename(self.current_folder) if self.current_folder else "output"
+        default_path = os.path.join(os.path.dirname(self.current_folder), default_name + ".xlsx")
+        path, _ = QFileDialog.getSaveFileName(self, "Save Excel File", default_path,
+                                              filter="Excel Files (*.xlsx)")
         if not path:
             return
-
         import xlsxwriter
         with pd.ExcelWriter(path, engine='xlsxwriter') as writer:
             workbook = writer.book
             ws1 = workbook.add_worksheet("GraphData")
             writer.sheets["GraphData"] = ws1
-
-            chart = workbook.add_chart({'type': 'scatter', 'subtype': 'straight'})
+            chart1 = workbook.add_chart({'type': 'scatter', 'subtype': 'straight'})
             col = 0
             for cycle in self.last_plotted_cycles:
                 df = self.data_by_cycle[cycle]
@@ -296,24 +295,36 @@ class CyclePlotterWidget(QWidget):
                 for row in range(len(cap)):
                     ws1.write(row + 2, col, cap[row])
                     ws1.write(row + 2, col + 1, vol[row])
-                chart.add_series({
-                    'name': f"=GraphData!${chr(65 + col)}$1",
+                # Excel の列参照を正しく生成するために helper 関数を使用
+                col_letter = col_idx_to_excel_col(col)
+                chart1.add_series({
+                    'name': f"=GraphData!${col_letter}$1",
                     'categories': ["GraphData", 2, col, len(cap) + 1, col],
                     'values': ["GraphData", 2, col + 1, len(vol) + 1, col + 1],
                     'marker': {'type': 'none'},
                     'line': {'width': 1.5},
                 })
                 col += 2
+            chart1.set_title({'name': 'Capacity-Voltage Scatter Plot'})
+            chart1.set_x_axis({'name': 'Capacity (mAh/g)', 'min': 0})
+            chart1.set_y_axis({'name': 'Voltage (V)', 'min': 0.5, 'max': 3.5})
+            chart1.set_style(11)
+            ws1.insert_chart("K2", chart1)
 
-            chart.set_title({'name': 'Capacity-Voltage Scatter Plot'})
-            chart.set_x_axis({'name': 'Capacity (mAh/g)', 'min': 0})
-            chart.set_y_axis({'name': 'Voltage (V)', 'min': 0.5, 'max': 3.5})
-            chart.set_style(11)
-            chart.set_size({'width': 500, 'height': 600})
-            ws1.insert_chart("K2", chart)
-
+            if not self.efficiency_data:
+                self.efficiency_data = []
+                for cycle in sorted(self.data_by_cycle.keys(), key=lambda x: int(x)):
+                    df = self.data_by_cycle[cycle]
+                    dis_df = df[df["Mode"] == "DIS"]
+                    chg_df = df[df["Mode"] == "CHG"]
+                    if not dis_df.empty and not chg_df.empty:
+                        dis_max = dis_df["Capacity(mAh/g)"].max()
+                        chg_max = chg_df["Capacity(mAh/g)"].max()
+                        eff = chg_max / dis_max if dis_max != 0 else None
+                        self.efficiency_data.append((int(cycle), dis_max, eff))
+            ws2 = workbook.add_worksheet("EfficiencyData")
+            writer.sheets["EfficiencyData"] = ws2
             if self.efficiency_data:
-                ws2 = workbook.add_worksheet("EfficiencyData")
                 ws2.write(0, 0, "Cycle")
                 ws2.write(0, 1, "Max DIS Capacity")
                 ws2.write(0, 2, "Coulombic Efficiency (%)")
@@ -321,7 +332,29 @@ class CyclePlotterWidget(QWidget):
                     ws2.write(i, 0, cyc)
                     ws2.write(i, 1, dcap)
                     ws2.write(i, 2, eff * 100 if eff is not None else None)
-
+                chart2 = workbook.add_chart({'type': 'scatter', 'subtype': 'straight'})
+                num_rows = len(self.efficiency_data)
+                chart2.add_series({
+                    'name': 'Max DIS Capacity',
+                    'categories': ['EfficiencyData', 1, 0, num_rows, 0],
+                    'values':     ['EfficiencyData', 1, 1, num_rows, 1],
+                    'marker': {'type': 'circle'},
+                })
+                chart2.add_series({
+                    'name': 'Coulombic Efficiency (%)',
+                    'categories': ['EfficiencyData', 1, 0, num_rows, 0],
+                    'values':     ['EfficiencyData', 1, 2, num_rows, 2],
+                    'marker': {'type': 'square'},
+                    'y2_axis': 1,
+                })
+                chart2.set_title({'name': 'Max DIS Capacity & Coulombic Efficiency'})
+                chart2.set_x_axis({'name': 'Cycle Number'})
+                chart2.set_y_axis({'name': 'Max DIS Capacity (mAh/g)'})
+                chart2.set_y2_axis({'name': 'Coulombic Efficiency (%)', 'min': 0, 'max': 110})
+                chart2.set_style(11)
+                ws2.insert_chart("E2", chart2)
+            else:
+                ws2.write(0, 0, "No efficiency data available.")
         self.update_status(f"Excelに保存しました: {os.path.basename(path)}")
 
 class CyclePlotterMainWindow(QMainWindow):
@@ -332,7 +365,6 @@ class CyclePlotterMainWindow(QMainWindow):
         self.central_widget = CyclePlotterWidget()
         self.setCentralWidget(self.central_widget)
         self.statusBar().showMessage("Ready")
-        # ステータスバーに進捗表示用の QProgressBar を追加
         self.progressBar = QProgressBar()
         self.progressBar.setVisible(False)
         self.statusBar().addPermanentWidget(self.progressBar)
