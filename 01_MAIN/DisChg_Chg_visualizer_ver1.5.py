@@ -25,6 +25,47 @@ def col_idx_to_excel_col(col):
         col = col // 26 - 1
     return result
 
+
+from PyQt5.QtWidgets import QDialog, QLabel, QLineEdit, QDialogButtonBox, QFormLayout
+
+class CycleInfoDialog(QDialog):
+    def __init__(self, parent=None, data_by_cycle=None):
+        super().__init__(parent)
+        self.setWindowTitle("Cycle Info")
+        self.setMinimumWidth(300)
+        self.data_by_cycle = data_by_cycle or {}
+
+        self.layout = QFormLayout(self)
+
+        self.cycle_input = QLineEdit()
+        self.layout.addRow("Cycle Number:", self.cycle_input)
+
+        self.result_label = QLabel("")
+        self.layout.addRow("Result:", self.result_label)
+
+        self.button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        self.button_box.accepted.connect(self.calculate)
+        self.button_box.rejected.connect(self.reject)
+
+        self.layout.addWidget(self.button_box)
+
+    def calculate(self):
+        cycle = self.cycle_input.text().strip()
+        if not cycle.isdigit() or cycle not in self.data_by_cycle:
+            self.result_label.setText("❌ 無効なサイクル番号")
+            return
+        df = self.data_by_cycle[cycle]
+        dis_df = df[df["Mode"] == "DIS"]
+        chg_df = df[df["Mode"] == "CHG"]
+        if dis_df.empty or chg_df.empty:
+            self.result_label.setText("❌ DIS または CHG データなし")
+            return
+        dis_max = dis_df["Capacity(mAh/g)"].max()
+        chg_max = chg_df["Capacity(mAh/g)"].max()
+        eff = chg_max / dis_max if dis_max != 0 else 0
+        # ここで計算した結果をラベルに表示
+        self.result_label.setText(f"DIS Cap.: {dis_max:.1f} mAh/g\n Coulmb.Eff.: {eff * 100:.1f} %")
+
 class CyclePlotterWidget(QWidget):
     def __init__(self):
         super().__init__()
@@ -70,7 +111,7 @@ class CyclePlotterWidget(QWidget):
         left_layout.setContentsMargins(0, 0, 0, 0)
         self.list_widget = QListWidget()
         self.select_all_btn = QPushButton("Select All")
-        self.deselect_all_btn = QPushButton("Deselect All")
+        self.deselect_all_btn = QPushButton("Clear All")
         btn_box = QHBoxLayout()
         btn_box.addWidget(self.select_all_btn)
         btn_box.addWidget(self.deselect_all_btn)
@@ -129,7 +170,7 @@ class CyclePlotterWidget(QWidget):
         self.load_btn.clicked.connect(self.load_files)
         self.all_plot_btn.clicked.connect(self.plot_all)
         self.select_plot_btn.clicked.connect(self.plot_selected)
-        self.dis_cap_btn.clicked.connect(self.plot_dis_cap_efficiency)
+        self.dis_cap_btn.clicked.connect(self.open_cycle_info_dialog)
         self.to_excel_btn.clicked.connect(self.export_to_excel)
         self.monoqlo_btn.clicked.connect(self.toggle_mono_mode)
         self.color_map_btn.clicked.connect(self.select_color_map)
@@ -236,6 +277,10 @@ class CyclePlotterWidget(QWidget):
 
 
     def plot_data(self, cycles):
+        axis_label_size = 13
+        tick_label_size = 11
+        title_size = 14
+        legend_size = 10
         self.canvas.figure.clf()
         self.ax = self.canvas.figure.add_subplot(111)
         cmap = plt.cm.get_cmap(self.current_cmap)
@@ -259,10 +304,10 @@ class CyclePlotterWidget(QWidget):
                 )
                 first = False
 
-        self.ax.set_xlabel("Capacity (mAh/g)", fontname="Arial")
-        self.ax.set_ylabel("Voltage (V)", fontname="Arial")
-        self.ax.set_title("Discharge-charge curves", fontname="Arial")
-        self.ax.tick_params(axis='both', direction='in', colors='black')
+        self.ax.set_xlabel("Capacity (mAh/g)", fontname="Arial", fontsize=axis_label_size)
+        self.ax.set_ylabel("Voltage(V)", fontname="Arial", fontsize=axis_label_size)
+        self.ax.set_title("Discharge-charge curves", fontname="Arial", fontsize=title_size)
+        self.ax.tick_params(axis='both', direction='in', colors='black', labelsize=tick_label_size)
         self.ax.yaxis.set_major_formatter(FormatStrFormatter('%.1f'))
 
         if len(cycles) <= 20:
@@ -273,12 +318,12 @@ class CyclePlotterWidget(QWidget):
             legend_fontsize = 9
 
         if len(cycles) < 31:
-            self.ax.legend(loc="upper right", fontsize=legend_fontsize, frameon=True, ncol=1)
+            self.ax.legend(loc="upper right", fontsize=legend_size, frameon=True, ncol=1)
         else:
             self.ax.legend(
                 loc="center left",
                 bbox_to_anchor=(1.01, 0.5),
-                fontsize=legend_fontsize,
+                fontsize=legend_size,
                 frameon=True,
                 ncol=2,
                 borderaxespad=0.
@@ -291,6 +336,10 @@ class CyclePlotterWidget(QWidget):
         self.update_status(f"プロット完了: {len(cycles)} サイクル表示中")
 
     def plot_dis_cap_efficiency(self):
+        axis_label_size = 13
+        tick_label_size = 11
+        title_size = 14
+        legend_size = 10
         self.canvas.figure.clf()
         self.ax = self.canvas.figure.add_subplot(111)
 
@@ -312,21 +361,21 @@ class CyclePlotterWidget(QWidget):
                 efficiencies.append(eff)
                 self.efficiency_data.append((int(cycle), dis_max, eff))
 
-        self.ax.set_title("Discharge capacity and coulombic efficiency vs cycle number", fontname="Arial")
-        self.ax.set_xlabel("Cycle Number", fontname="Arial")
-        self.ax.set_ylabel("Discharge capacity (mAh/g)", fontname="Arial", color="dodgerblue")
+        self.ax.set_title("Discharge-charge curves", fontname="Arial", fontsize=title_size)
+        self.ax.set_xlabel("Cycle", fontname="Arial", fontsize=axis_label_size)
+        self.ax.set_ylabel("Capacity (mAh/g)", fontsize=axis_label_size, color="dodgerblue")
         self.ax.set_ylim(0, max(max_dis_caps) * 1.1)
         ln1 = self.ax.plot(cycles, max_dis_caps, color="dodgerblue", label="Discharge capacity", marker='o')[0]
-        self.ax.tick_params(axis='both', direction='in', colors="k")
-        self.ax.tick_params(axis='y', direction='in', colors="dodgerblue")
+        self.ax.tick_params(axis='both', direction='in', colors="k", labelsize=tick_label_size)
+        self.ax.tick_params(axis='y', direction='in', colors="dodgerblue", labelsize=tick_label_size)
         self.ax.yaxis.set_major_formatter(FormatStrFormatter('%.0f'))
 
         self.ax2 = self.ax.twinx()
-        self.ax2.set_ylabel("Coulombic efficiency (%)", fontname="Arial", color="darkorange")
+        self.ax2.set_ylabel("Coulombic efficiency (%)", fontname="Arial", fontsize=axis_label_size, color="darkorange")
         ln2 = self.ax2.plot(
             cycles, [e * 100 for e in efficiencies],
             color="darkorange", label="Coulombic efficiency", marker='x')[0]
-        self.ax2.tick_params(axis='both', direction='in', colors="darkorange")
+        self.ax2.tick_params(axis='both', direction='in', colors="darkorange", labelsize=tick_label_size)
         self.ax2.set_ylim(0, 110)
         self.ax2.yaxis.set_major_formatter(PercentFormatter())
 
@@ -344,7 +393,7 @@ class CyclePlotterWidget(QWidget):
             lines, labels,
             loc="upper center",
             bbox_to_anchor=(0.5, -0.15),
-            fontsize=legend_fontsize,
+            fontsize=legend_size,
             frameon=True, ncol=2
         )
 
@@ -488,6 +537,12 @@ class CyclePlotterWidget(QWidget):
         self.update_status(f"Excelに保存しました: {os.path.basename(path)}")
 
 
+    
+    def open_cycle_info_dialog(self):
+        self.plot_dis_cap_efficiency()
+        dialog = CycleInfoDialog(self, data_by_cycle=self.data_by_cycle)
+        dialog.exec_()
+
     def save_info_text(self):
         if not self.current_folder:
             QMessageBox.warning(self, "Warning", "先にフォルダを読み込んでください。")
@@ -518,6 +573,12 @@ class CyclePlotterMainWindow(QMainWindow):
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
+
+    # 📌 GUIのフォントサイズを統一設定（例: 15pt）
+    font = app.font()
+    font.setPointSize(15)
+    app.setFont(font)
+
     main_window = CyclePlotterMainWindow()
     main_window.show()
     sys.exit(app.exec_())
@@ -565,3 +626,45 @@ if __name__ == '__main__':
             QMessageBox.warning(self, "エラー", "該当するサイクルが存在しません")
             return
         self.plot_data(valid_cycles)
+
+
+from PyQt5.QtWidgets import QDialog, QLabel, QLineEdit, QDialogButtonBox, QFormLayout
+
+class CycleInfoDialog(QDialog):
+    def __init__(self, parent=None, data_by_cycle=None):
+        super().__init__(parent)
+        self.setWindowTitle("Cycle Info")
+        # ウィンドウサイズを指定
+        self.setMinimumWidth(500)
+
+        self.data_by_cycle = data_by_cycle or {}
+
+        self.layout = QFormLayout(self)
+
+        self.cycle_input = QLineEdit()
+        self.layout.addRow("Cycle Number:", self.cycle_input)
+
+        self.result_label = QLabel("")
+        self.layout.addRow("Result:", self.result_label)
+
+        self.button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        self.button_box.accepted.connect(self.calculate)
+        self.button_box.rejected.connect(self.reject)
+
+        self.layout.addWidget(self.button_box)
+
+    def calculate(self):
+        cycle = self.cycle_input.text().strip()
+        if not cycle.isdigit() or cycle not in self.data_by_cycle:
+            self.result_label.setText("❌ 無効なサイクル番号")
+            return
+        df = self.data_by_cycle[cycle]
+        dis_df = df[df["Mode"] == "DIS"]
+        chg_df = df[df["Mode"] == "CHG"]
+        if dis_df.empty or chg_df.empty:
+            self.result_label.setText("❌ DIS または CHG データなし")
+            return
+        dis_max = dis_df["Capacity(mAh/g)"].max()
+        chg_max = chg_df["Capacity(mAh/g)"].max()
+        eff = chg_max / dis_max if dis_max != 0 else 0
+        self.result_label.setText(f"DIS Cap.: {dis_max:.1f} mAh/g\n CE.: {eff * 100:.1f} %")
