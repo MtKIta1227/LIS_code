@@ -63,7 +63,8 @@ class CycleInfoDialog(QDialog):
         dis_max = dis_df["Capacity(mAh/g)"].max()
         chg_max = chg_df["Capacity(mAh/g)"].max()
         eff = chg_max / dis_max if dis_max != 0 else 0
-        self.result_label.setText(f"🔋 DIS: {dis_max:.2f} mAh/g\n⚡ CE: {eff * 100:.1f} %")
+        # ここで計算した結果をラベルに表示
+        self.result_label.setText(f"DIS Cap.: {dis_max:.1f} mAh/g\n Coulmb.Eff.: {eff * 100:.1f} %")
 
 class CyclePlotterWidget(QWidget):
     def __init__(self):
@@ -303,8 +304,8 @@ class CyclePlotterWidget(QWidget):
                 )
                 first = False
 
-        self.ax.set_xlabel("Capacity (mAh/g)", fontname="Arial", fontsize=axis_label_size)
-        self.ax.set_ylabel("Voltage (V)", fontname="Arial", fontsize=axis_label_size)
+        self.ax.set_xlabel("cycle", fontname="Arial", fontsize=axis_label_size)
+        self.ax.set_ylabel("Capacity (mAh/g)", fontname="Arial", fontsize=axis_label_size)
         self.ax.set_title("Discharge-charge curves", fontname="Arial", fontsize=title_size)
         self.ax.tick_params(axis='both', direction='in', colors='black', labelsize=tick_label_size)
         self.ax.yaxis.set_major_formatter(FormatStrFormatter('%.1f'))
@@ -633,7 +634,9 @@ class CycleInfoDialog(QDialog):
     def __init__(self, parent=None, data_by_cycle=None):
         super().__init__(parent)
         self.setWindowTitle("Cycle Info")
-        self.setMinimumWidth(300)
+        # ウィンドウサイズを指定
+        self.setMinimumWidth(500)
+
         self.data_by_cycle = data_by_cycle or {}
 
         self.layout = QFormLayout(self)
@@ -664,4 +667,4 @@ class CycleInfoDialog(QDialog):
         dis_max = dis_df["Capacity(mAh/g)"].max()
         chg_max = chg_df["Capacity(mAh/g)"].max()
         eff = chg_max / dis_max if dis_max != 0 else 0
-        self.result_label.setText(f"🔋 DIS: {dis_max:.2f} mAh/g\n⚡ CE: {eff * 100:.1f} %")
+        self.result_label.setText(f"DIS Cap.: {dis_max:.1f} mAh/g\n CE.: {eff * 100:.1f} %")
