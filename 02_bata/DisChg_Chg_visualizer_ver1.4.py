@@ -304,7 +304,7 @@ class CyclePlotterWidget(QWidget):
                 )
                 first = False
 
-        self.ax.set_xlabel("cycle", fontname="Arial", fontsize=axis_label_size)
+        self.ax.set_xlabel("Cycle", fontname="Arial", fontsize=axis_label_size)
         self.ax.set_ylabel("Capacity (mAh/g)", fontname="Arial", fontsize=axis_label_size)
         self.ax.set_title("Discharge-charge curves", fontname="Arial", fontsize=title_size)
         self.ax.tick_params(axis='both', direction='in', colors='black', labelsize=tick_label_size)
@@ -362,8 +362,8 @@ class CyclePlotterWidget(QWidget):
                 self.efficiency_data.append((int(cycle), dis_max, eff))
 
         self.ax.set_title("Discharge-charge curves", fontname="Arial", fontsize=title_size)
-        self.ax.set_xlabel("Capacity (mAh/g)", fontname="Arial", fontsize=axis_label_size)
-        self.ax.set_ylabel("Voltage (V)", fontsize=axis_label_size, color="dodgerblue")
+        self.ax.set_xlabel("Cycle", fontname="Arial", fontsize=axis_label_size)
+        self.ax.set_ylabel("Capacity (mAh/g)", fontsize=axis_label_size, color="dodgerblue")
         self.ax.set_ylim(0, max(max_dis_caps) * 1.1)
         ln1 = self.ax.plot(cycles, max_dis_caps, color="dodgerblue", label="Discharge capacity", marker='o')[0]
         self.ax.tick_params(axis='both', direction='in', colors="k", labelsize=tick_label_size)
