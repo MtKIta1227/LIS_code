@@ -7,14 +7,16 @@ import matplotlib.pyplot as plt
 plt.rcParams['font.family'] = 'Arial'
 
 from PyQt5.QtWidgets import (
+    QInputDialog, QComboBox,
     QApplication, QMainWindow, QWidget, QVBoxLayout, QPushButton, QFileDialog,
     QListWidget, QListWidgetItem, QHBoxLayout, QMessageBox, QSplitter, QFrame,
-    QSizePolicy, QProgressBar
+    QSizePolicy, QProgressBar, QTextEdit
 )
 from PyQt5.QtCore import Qt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.ticker import FormatStrFormatter, PercentFormatter
+import re
 
 def col_idx_to_excel_col(col):
     result = ""
@@ -23,6 +25,46 @@ def col_idx_to_excel_col(col):
         col = col // 26 - 1
     return result
 
+
+from PyQt5.QtWidgets import QDialog, QLabel, QLineEdit, QDialogButtonBox, QFormLayout
+
+class CycleInfoDialog(QDialog):
+    def __init__(self, parent=None, data_by_cycle=None):
+        super().__init__(parent)
+        self.setWindowTitle("Cycle Info")
+        self.setMinimumWidth(300)
+        self.data_by_cycle = data_by_cycle or {}
+
+        self.layout = QFormLayout(self)
+
+        self.cycle_input = QLineEdit()
+        self.layout.addRow("Cycle Number:", self.cycle_input)
+
+        self.result_label = QLabel("")
+        self.layout.addRow("Result:", self.result_label)
+
+        self.button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        self.button_box.accepted.connect(self.calculate)
+        self.button_box.rejected.connect(self.reject)
+
+        self.layout.addWidget(self.button_box)
+
+    def calculate(self):
+        cycle = self.cycle_input.text().strip()
+        if not cycle.isdigit() or cycle not in self.data_by_cycle:
+            self.result_label.setText("❌ 無効なサイクル番号")
+            return
+        df = self.data_by_cycle[cycle]
+        dis_df = df[df["Mode"] == "DIS"]
+        chg_df = df[df["Mode"] == "CHG"]
+        if dis_df.empty or chg_df.empty:
+            self.result_label.setText("❌ DIS または CHG データなし")
+            return
+        dis_max = dis_df["Capacity(mAh/g)"].max()
+        chg_max = chg_df["Capacity(mAh/g)"].max()
+        eff = chg_max / dis_max if dis_max != 0 else 0
+        self.result_label.setText(f"🔋 DIS: {dis_max:.2f} mAh/g\n⚡ CE: {eff * 100:.1f} %")
+
 class CyclePlotterWidget(QWidget):
     def __init__(self):
         super().__init__()
@@ -30,6 +72,8 @@ class CyclePlotterWidget(QWidget):
         self.last_plotted_cycles = []
         self.efficiency_data = []
         self.data_by_cycle = {}
+        self.mono_mode = False
+        self.current_cmap = "tab10"
 
         main_layout = QVBoxLayout(self)
 
@@ -39,11 +83,12 @@ class CyclePlotterWidget(QWidget):
         top_bar.setContentsMargins(20, 10, 20, 5)
 
         self.load_btn = QPushButton("LOAD")
+        self.monoqlo_btn = QPushButton("MONOQLO OFF")
         self.all_plot_btn = QPushButton("All Plot")
         self.select_plot_btn = QPushButton("Select Plot")
-        self.dis_cap_btn = QPushButton("DIS-Cap/CLN EF")
+        self.dis_cap_btn = QPushButton("CyclePlot")
 
-        for btn in [self.load_btn, self.all_plot_btn, self.select_plot_btn, self.dis_cap_btn]:
+        for btn in [self.load_btn, self.monoqlo_btn, self.all_plot_btn, self.select_plot_btn, self.dis_cap_btn]:
             btn.setMinimumWidth(180)
             btn.setMinimumHeight(32)
             top_bar.addWidget(btn)
@@ -65,7 +110,7 @@ class CyclePlotterWidget(QWidget):
         left_layout.setContentsMargins(0, 0, 0, 0)
         self.list_widget = QListWidget()
         self.select_all_btn = QPushButton("Select All")
-        self.deselect_all_btn = QPushButton("Deselect All")
+        self.deselect_all_btn = QPushButton("Clear All")
         btn_box = QHBoxLayout()
         btn_box.addWidget(self.select_all_btn)
         btn_box.addWidget(self.deselect_all_btn)
@@ -81,7 +126,26 @@ class CyclePlotterWidget(QWidget):
         self.canvas = FigureCanvas(plt.Figure())
         self.toolbar = NavigationToolbar(self.canvas, self)
         right_layout.addWidget(self.toolbar)
-        right_layout.addWidget(self.canvas)
+        # right_layout.addWidget(self.canvas)
+
+        # ==== INFO Box ====
+        info_layout = QVBoxLayout()
+        self.info_textbox = QTextEdit()
+        #あらかじめテキストボックスに[[INFO]]と表示
+        self.info_textbox.setPlaceholderText("ここにINFOを入力してください")
+        self.info_save_btn = QPushButton("INFO Save")
+        self.info_save_btn.setMinimumWidth(120)
+        info_layout.addWidget(self.info_textbox)
+        info_layout.addWidget(self.info_save_btn)
+
+        # グラフとINFOを横並びに
+        right_side_layout = QHBoxLayout()
+        right_side_layout.addWidget(self.canvas, 4)
+        right_side_layout.addLayout(info_layout, 1)
+
+        right_layout.addWidget(self.toolbar)
+        right_layout.addLayout(right_side_layout)
+
         self.ax = self.canvas.figure.add_subplot(111)
         splitter.addWidget(right_frame)
         splitter.setStretchFactor(1, 5)
@@ -89,10 +153,15 @@ class CyclePlotterWidget(QWidget):
 
         # ==== Bottom Buttons ====
         bottom_buttons = QHBoxLayout()
+        self.color_map_btn = QPushButton("ColorMap")
+        self.range_plot_btn = QPushButton("Cycle Range Plot")
         self.to_excel_btn = QPushButton("toEXCEL")
         self.to_excel_btn.setMinimumHeight(30)
         self.to_excel_btn.setMinimumWidth(120)
         bottom_buttons.addStretch()
+        bottom_buttons.addWidget(self.monoqlo_btn)
+        bottom_buttons.addWidget(self.color_map_btn)
+        bottom_buttons.addWidget(self.range_plot_btn)
         bottom_buttons.addWidget(self.to_excel_btn)
         main_layout.addLayout(bottom_buttons)
 
@@ -100,10 +169,14 @@ class CyclePlotterWidget(QWidget):
         self.load_btn.clicked.connect(self.load_files)
         self.all_plot_btn.clicked.connect(self.plot_all)
         self.select_plot_btn.clicked.connect(self.plot_selected)
-        self.dis_cap_btn.clicked.connect(self.plot_dis_cap_efficiency)
+        self.dis_cap_btn.clicked.connect(self.open_cycle_info_dialog)
         self.to_excel_btn.clicked.connect(self.export_to_excel)
+        self.monoqlo_btn.clicked.connect(self.toggle_mono_mode)
+        self.color_map_btn.clicked.connect(self.select_color_map)
+        self.range_plot_btn.clicked.connect(self.plot_range_cycles)
         self.select_all_btn.clicked.connect(self.select_all_items)
         self.deselect_all_btn.clicked.connect(self.deselect_all_items)
+        self.info_save_btn.clicked.connect(self.save_info_text)
 
     def select_all_items(self):
         for i in range(self.list_widget.count()):
@@ -115,13 +188,19 @@ class CyclePlotterWidget(QWidget):
 
 # --- 以下の部分は、コードが長いため分割して次で保存 ---
 
-    def update_status(self, message):
+    def update_status(self, message=""):
         main_window = self.window()
         if isinstance(main_window, QMainWindow):
-            main_window.statusBar().showMessage(message)
+            status_parts = []
+            if self.current_folder:
+                status_parts.append(f"📁 {os.path.basename(self.current_folder)}")
+            if self.mono_mode:
+                status_parts.append("🎨 MONOQLOモード")
+            if message:
+                status_parts.append(message)
+            main_window.statusBar().showMessage(" | ".join(status_parts))
         else:
             print(message)
-
     def clear_right_axis(self):
         if hasattr(self, 'ax2') and self.ax2 in self.canvas.figure.axes:
             self.canvas.figure.delaxes(self.ax2)
@@ -168,6 +247,17 @@ class CyclePlotterWidget(QWidget):
             cycle_count = len(self.data_by_cycle)
             self.update_status(f"Loaded Folder: {self.current_folder} | ファイル: {file_count}個, サイクル: {cycle_count}個")
 
+        # [INFO]フォルダから情報を読み込み
+        info_dir = os.path.join(os.getcwd(), "INFO")
+        folder_name = os.path.basename(self.current_folder)
+        info_path = os.path.join(info_dir, f"{folder_name}.txt")
+        if os.path.exists(info_path):
+            with open(info_path, "r", encoding="utf-8") as file:
+                self.info_textbox.setPlainText(file.read())
+        else:
+            self.info_textbox.clear()
+
+
     def plot_all(self):
         self.plot_data(list(self.data_by_cycle.keys()))
 
@@ -186,15 +276,19 @@ class CyclePlotterWidget(QWidget):
 
 
     def plot_data(self, cycles):
+        axis_label_size = 13
+        tick_label_size = 11
+        title_size = 14
+        legend_size = 10
         self.canvas.figure.clf()
         self.ax = self.canvas.figure.add_subplot(111)
-        cmap = plt.cm.get_cmap("tab10")
+        cmap = plt.cm.get_cmap(self.current_cmap)
         for cycle in cycles:
             cycle_num = int(cycle)
             group_index = (cycle_num - 1) // 10
             within_group = (cycle_num - 1) % 10
-            alpha = 1.0 - 0.1 * within_group
-            color = cmap(group_index % cmap.N)
+            alpha = 1.0 if self.mono_mode else 1.0 - 0.1 * within_group
+            color = "black" if self.mono_mode else cmap(group_index % cmap.N)
             label = f"Cycle {cycle}"
             first = True
             df = self.data_by_cycle[cycle]
@@ -209,10 +303,10 @@ class CyclePlotterWidget(QWidget):
                 )
                 first = False
 
-        self.ax.set_xlabel("Capacity (mAh/g)", fontname="Arial")
-        self.ax.set_ylabel("Voltage (V)", fontname="Arial")
-        self.ax.set_title("Capacity-Voltage by Cycle", fontname="Arial")
-        self.ax.tick_params(axis='both', direction='in', colors='black')
+        self.ax.set_xlabel("Capacity (mAh/g)", fontname="Arial", fontsize=axis_label_size)
+        self.ax.set_ylabel("Voltage (V)", fontname="Arial", fontsize=axis_label_size)
+        self.ax.set_title("Discharge-charge curves", fontname="Arial", fontsize=title_size)
+        self.ax.tick_params(axis='both', direction='in', colors='black', labelsize=tick_label_size)
         self.ax.yaxis.set_major_formatter(FormatStrFormatter('%.1f'))
 
         if len(cycles) <= 20:
@@ -223,23 +317,28 @@ class CyclePlotterWidget(QWidget):
             legend_fontsize = 9
 
         if len(cycles) < 31:
-            self.ax.legend(loc="upper right", fontsize=legend_fontsize, frameon=True, ncol=1)
+            self.ax.legend(loc="upper right", fontsize=legend_size, frameon=True, ncol=1)
         else:
             self.ax.legend(
                 loc="center left",
                 bbox_to_anchor=(1.01, 0.5),
-                fontsize=legend_fontsize,
+                fontsize=legend_size,
                 frameon=True,
-                ncol=1,
+                ncol=2,
                 borderaxespad=0.
             )
 
         self.canvas.figure.subplots_adjust(right=0.8)
+        self.canvas.figure.tight_layout()
         self.canvas.draw()
         self.last_plotted_cycles = cycles
         self.update_status(f"プロット完了: {len(cycles)} サイクル表示中")
 
     def plot_dis_cap_efficiency(self):
+        axis_label_size = 13
+        tick_label_size = 11
+        title_size = 14
+        legend_size = 10
         self.canvas.figure.clf()
         self.ax = self.canvas.figure.add_subplot(111)
 
@@ -261,19 +360,21 @@ class CyclePlotterWidget(QWidget):
                 efficiencies.append(eff)
                 self.efficiency_data.append((int(cycle), dis_max, eff))
 
-        self.ax.set_title("Max DIS Capacity & Coulombic Efficiency", fontname="Arial")
-        self.ax.set_xlabel("Cycle Number", fontname="Arial")
-        self.ax.set_ylabel("Max DIS Capacity (mAh/g)", fontname="Arial", color="dodgerblue")
-        ln1 = self.ax.plot(cycles, max_dis_caps, color="dodgerblue", label="Max DIS Capacity", marker='o')[0]
-        self.ax.tick_params(axis='both', direction='in', colors="dodgerblue")
-        self.ax.yaxis.set_major_formatter(FormatStrFormatter('%.1f'))
+        self.ax.set_title("Discharge-charge curves", fontname="Arial", fontsize=title_size)
+        self.ax.set_xlabel("Capacity (mAh/g)", fontname="Arial", fontsize=axis_label_size)
+        self.ax.set_ylabel("Voltage (V)", fontsize=axis_label_size, color="dodgerblue")
+        self.ax.set_ylim(0, max(max_dis_caps) * 1.1)
+        ln1 = self.ax.plot(cycles, max_dis_caps, color="dodgerblue", label="Discharge capacity", marker='o')[0]
+        self.ax.tick_params(axis='both', direction='in', colors="k", labelsize=tick_label_size)
+        self.ax.tick_params(axis='y', direction='in', colors="dodgerblue", labelsize=tick_label_size)
+        self.ax.yaxis.set_major_formatter(FormatStrFormatter('%.0f'))
 
         self.ax2 = self.ax.twinx()
-        self.ax2.set_ylabel("Coulombic Efficiency (%)", fontname="Arial", color="darkorange")
+        self.ax2.set_ylabel("Coulombic efficiency (%)", fontname="Arial", fontsize=axis_label_size, color="darkorange")
         ln2 = self.ax2.plot(
             cycles, [e * 100 for e in efficiencies],
-            color="darkorange", label="Efficiency", marker='x')[0]
-        self.ax2.tick_params(axis='both', direction='in', colors="darkorange")
+            color="darkorange", label="Coulombic efficiency", marker='x')[0]
+        self.ax2.tick_params(axis='both', direction='in', colors="darkorange", labelsize=tick_label_size)
         self.ax2.set_ylim(0, 110)
         self.ax2.yaxis.set_major_formatter(PercentFormatter())
 
@@ -291,14 +392,57 @@ class CyclePlotterWidget(QWidget):
             lines, labels,
             loc="upper center",
             bbox_to_anchor=(0.5, -0.15),
-            fontsize=legend_fontsize,
+            fontsize=legend_size,
             frameon=True, ncol=2
         )
 
         self.canvas.figure.subplots_adjust(bottom=0.25)
+        self.canvas.figure.tight_layout()
         self.canvas.draw()
-        self.update_status("DIS容量とクーロン効率を表示しました")
+        self.update_status("放電容量とクーロン効率を表示しました")
 
+
+    def toggle_mono_mode(self):
+        self.mono_mode = not self.mono_mode
+        if self.mono_mode:
+            self.monoqlo_btn.setText("MONOQLO ON")
+            self.monoqlo_btn.setStyleSheet("background-color: black; color: white;")
+        else:
+            self.monoqlo_btn.setText("MONOQLO OFF")
+            self.monoqlo_btn.setStyleSheet("")
+        self.update_status()
+
+    def select_color_map(self):
+        maps = ["tab10", "tab20", "Set1", "Set2", "Paired", "Pastel1", "Dark2"]
+        cmap, ok = QInputDialog.getItem(self, "カラーマップ選択", "カラーマップを選んでください：", maps, 0, False)
+        if ok and cmap:
+            self.current_cmap = cmap
+            self.update_status(f"カラーマップ: {cmap}")
+
+    def plot_range_cycles(self):
+        text, ok = QInputDialog.getText(self, "サイクル範囲入力", "プロットしたいサイクル番号をカンマ区切りで入力（例：1-3,6,8）:")
+        if not ok or not text:
+            return
+        import re
+        pattern = re.compile(r'(\d+)(?:-(\d+))?')
+        selected = set()
+        for part in text.split(','):
+            match = pattern.fullmatch(part.strip())
+            if match:
+                start = int(match.group(1))
+                end = int(match.group(2)) if match.group(2) else start
+                selected.update(str(i) for i in range(start, end+1))
+        # チェック状態に関係なく、入力された範囲のサイクルを強制的にチェックON
+        valid_cycles = sorted([c for c in self.data_by_cycle.keys() if c in selected], key=lambda x: int(x))
+        for i in range(self.list_widget.count()):
+            item = self.list_widget.item(i)
+            cycle = item.text().split()[-1]
+            if cycle in valid_cycles:
+                item.setCheckState(Qt.Checked)
+        if not valid_cycles:
+            QMessageBox.warning(self, "エラー", "該当するサイクルが存在しません")
+            return
+        self.plot_data(valid_cycles)
     def export_to_excel(self):
         if not self.last_plotted_cycles:
             QMessageBox.warning(self, "No Data", "プロットされたデータがありません")
@@ -391,6 +535,26 @@ class CyclePlotterWidget(QWidget):
                 ws2.write(0, 0, "No efficiency data available.")
         self.update_status(f"Excelに保存しました: {os.path.basename(path)}")
 
+
+    
+    def open_cycle_info_dialog(self):
+        self.plot_dis_cap_efficiency()
+        dialog = CycleInfoDialog(self, data_by_cycle=self.data_by_cycle)
+        dialog.exec_()
+
+    def save_info_text(self):
+        if not self.current_folder:
+            QMessageBox.warning(self, "Warning", "先にフォルダを読み込んでください。")
+            return
+        info_dir = os.path.join(os.getcwd(), "INFO")
+        if not os.path.exists(info_dir):
+            os.makedirs(info_dir)
+        folder_name = os.path.basename(self.current_folder)
+        file_path = os.path.join(info_dir, f"{folder_name}.txt")
+        with open(file_path, "w", encoding="utf-8") as file:
+            file.write(self.info_textbox.toPlainText())
+        self.update_status(f"INFOを保存しました: {folder_name}.txt")
+
 class CyclePlotterMainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -400,11 +564,104 @@ class CyclePlotterMainWindow(QMainWindow):
         self.setCentralWidget(self.central_widget)
         self.statusBar().showMessage("Ready")
         self.progressBar = QProgressBar()
-        self.progressBar.setVisible(False)
+        self.progressBar.setMinimum(0)
+        self.progressBar.setMaximum(1)
+        self.progressBar.setValue(0)
+        self.progressBar.setTextVisible(True)
         self.statusBar().addPermanentWidget(self.progressBar)
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
+
+    # 📌 GUIのフォントサイズを統一設定（例: 15pt）
+    font = app.font()
+    font.setPointSize(15)
+    app.setFont(font)
+
     main_window = CyclePlotterMainWindow()
     main_window.show()
     sys.exit(app.exec_())
+
+
+    def toggle_mono_mode(self):
+        self.mono_mode = not self.mono_mode
+        if self.mono_mode:
+            self.monoqlo_btn.setText("MONOQLO ON")
+            self.monoqlo_btn.setStyleSheet("background-color: black; color: white;")
+        else:
+            self.monoqlo_btn.setText("MONOQLO OFF")
+            self.monoqlo_btn.setStyleSheet("")
+        self.update_status()
+
+
+    def select_color_map(self):
+        maps = ["tab10", "tab20", "Set1", "Set2", "Paired", "Pastel1", "Dark2"]
+        cmap, ok = QInputDialog.getItem(self, "カラーマップ選択", "カラーマップを選んでください：", maps, 0, False)
+        if ok and cmap:
+            self.current_cmap = cmap
+            self.update_status(f"カラーマップ: {cmap}")
+
+    def plot_range_cycles(self):
+        text, ok = QInputDialog.getText(self, "サイクル範囲入力", "プロットしたいサイクル番号をカンマ区切りで入力（例：1-3,6,8）:")
+        if not ok or not text:
+            return
+        import re
+        pattern = re.compile(r'(\d+)(?:-(\d+))?')
+        selected = set()
+        for part in text.split(','):
+            match = pattern.fullmatch(part.strip())
+            if match:
+                start = int(match.group(1))
+                end = int(match.group(2)) if match.group(2) else start
+                selected.update(str(i) for i in range(start, end+1))
+        # チェック状態に関係なく、入力された範囲のサイクルを強制的にチェックON
+        valid_cycles = sorted([c for c in self.data_by_cycle.keys() if c in selected], key=lambda x: int(x))
+        for i in range(self.list_widget.count()):
+            item = self.list_widget.item(i)
+            cycle = item.text().split()[-1]
+            if cycle in valid_cycles:
+                item.setCheckState(Qt.Checked)
+        if not valid_cycles:
+            QMessageBox.warning(self, "エラー", "該当するサイクルが存在しません")
+            return
+        self.plot_data(valid_cycles)
+
+
+from PyQt5.QtWidgets import QDialog, QLabel, QLineEdit, QDialogButtonBox, QFormLayout
+
+class CycleInfoDialog(QDialog):
+    def __init__(self, parent=None, data_by_cycle=None):
+        super().__init__(parent)
+        self.setWindowTitle("Cycle Info")
+        self.setMinimumWidth(300)
+        self.data_by_cycle = data_by_cycle or {}
+
+        self.layout = QFormLayout(self)
+
+        self.cycle_input = QLineEdit()
+        self.layout.addRow("Cycle Number:", self.cycle_input)
+
+        self.result_label = QLabel("")
+        self.layout.addRow("Result:", self.result_label)
+
+        self.button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        self.button_box.accepted.connect(self.calculate)
+        self.button_box.rejected.connect(self.reject)
+
+        self.layout.addWidget(self.button_box)
+
+    def calculate(self):
+        cycle = self.cycle_input.text().strip()
+        if not cycle.isdigit() or cycle not in self.data_by_cycle:
+            self.result_label.setText("❌ 無効なサイクル番号")
+            return
+        df = self.data_by_cycle[cycle]
+        dis_df = df[df["Mode"] == "DIS"]
+        chg_df = df[df["Mode"] == "CHG"]
+        if dis_df.empty or chg_df.empty:
+            self.result_label.setText("❌ DIS または CHG データなし")
+            return
+        dis_max = dis_df["Capacity(mAh/g)"].max()
+        chg_max = chg_df["Capacity(mAh/g)"].max()
+        eff = chg_max / dis_max if dis_max != 0 else 0
+        self.result_label.setText(f"🔋 DIS: {dis_max:.2f} mAh/g\n⚡ CE: {eff * 100:.1f} %")
