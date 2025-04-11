@@ -458,64 +458,41 @@ class CyclePlotterWidget(QWidget):
             return
         import xlsxwriter
         with pd.ExcelWriter(path, engine='xlsxwriter') as writer:
+            self.export_kaleida_sheet(writer)
             workbook = writer.book
             ws1 = workbook.add_worksheet("GraphData")
             writer.sheets["GraphData"] = ws1
-    
-            # 各サイクルのデータ（容量と電圧）を作成し、最大行数を取得
-            cycles = self.last_plotted_cycles
-            cycle_data = {}
-            max_len = 0
-            for cycle in cycles:
+            chart1 = workbook.add_chart({'type': 'scatter', 'subtype': 'straight'})
+            col = 0
+            for cycle in self.last_plotted_cycles:
                 df = self.data_by_cycle[cycle]
                 df = df[df["Mode"].isin(["DIS", "CHG"])]
-                cap = []
-                volt = []
+                cap, vol = [], []
                 for mode in ["DIS", "CHG"]:
                     df_mode = df[df["Mode"] == mode].sort_values("Capacity(mAh/g)")
                     cap += df_mode["Capacity(mAh/g)"].tolist() + [None]
-                    volt += df_mode["Voltage(V)"].tolist() + [None]
-                cycle_data[cycle] = {"capacity": cap, "voltage": volt}
-                if len(cap) > max_len:
-                    max_len = len(cap)
-    
-            # 参照用として、最初のサイクルの電圧データを使用（不足する場合は None で埋める）
-            ref_cycle = cycles[0]
-            ref_voltage = cycle_data[ref_cycle]["voltage"]
-            if len(ref_voltage) < max_len:
-                ref_voltage = ref_voltage + [None] * (max_len - len(ref_voltage))
-    
-            # ヘッダーの書き込み：A1に "Voltage"、B1以降に "Cycle X"
-            ws1.write(0, 0, "Voltage")
-            for col_index, cycle in enumerate(cycles, start=1):
-                ws1.write(0, col_index, f"Cycle {cycle}")
-    
-            # データの書き込み（1行目がヘッダーなので、2行目から書き出す）
-            for row in range(max_len):
-                ws1.write(row + 1, 0, ref_voltage[row])
-                for col_index, cycle in enumerate(cycles, start=1):
-                    cap_series = cycle_data[cycle]["capacity"]
-                    value = cap_series[row] if row < len(cap_series) else None
-                    ws1.write(row + 1, col_index, value)
-    
-            # 散布図を作成（x軸：電圧、y軸：各サイクルの容量）
-            chart1 = workbook.add_chart({'type': 'scatter', 'subtype': 'straight'})
-            for col_index, cycle in enumerate(cycles, start=1):
+                    vol += df_mode["Voltage(V)"].tolist() + [None]
+                ws1.write(0, col, f"Cycle {cycle}")
+                ws1.write(1, col, "Capacity")
+                ws1.write(1, col + 1, "Voltage")
+                for row in range(len(cap)):
+                    ws1.write(row + 2, col, cap[row])
+                    ws1.write(row + 2, col + 1, vol[row])
+                col_letter = col_idx_to_excel_col(col)
                 chart1.add_series({
-                    'name':       f"=GraphData!${col_idx_to_excel_col(col_index)}$1",
-                    'categories': ["GraphData", 1, 0, max_len, 0],  # A2:A(max_len+1) の電圧
-                    'values':     ["GraphData", 1, col_index, max_len, col_index],  # 各サイクルの容量
+                    'name': f"=GraphData!${col_letter}$1",
+                    'categories': ["GraphData", 2, col, len(cap) + 1, col],
+                    'values': ["GraphData", 2, col + 1, len(vol) + 1, col + 1],
                     'marker': {'type': 'none'},
                     'line': {'width': 1.5},
                 })
-    
+                col += 2
             chart1.set_title({'name': 'Capacity-Voltage Scatter Plot'})
-            chart1.set_x_axis({'name': 'Voltage (V)'})
-            chart1.set_y_axis({'name': 'Capacity (mAh/g)'})
+            chart1.set_x_axis({'name': 'Capacity (mAh/g)', 'min': 0})
+            chart1.set_y_axis({'name': 'Voltage (V)', 'min': 0.5, 'max': 3.5})
             chart1.set_style(11)
             ws1.insert_chart("K2", chart1)
-    
-            # 効率シート（従来の処理）
+
             if not self.efficiency_data:
                 self.efficiency_data = []
                 for cycle in sorted(self.data_by_cycle.keys(), key=lambda x: int(x)):
@@ -562,6 +539,7 @@ class CyclePlotterWidget(QWidget):
                 ws2.write(0, 0, "No efficiency data available.")
         self.update_status(f"Excelに保存しました: {os.path.basename(path)}")
 
+
     
     def open_cycle_info_dialog(self):
         self.plot_dis_cap_efficiency()
@@ -580,6 +558,29 @@ class CyclePlotterWidget(QWidget):
         with open(file_path, "w", encoding="utf-8") as file:
             file.write(self.info_textbox.toPlainText())
         self.update_status(f"INFOを保存しました: {folder_name}.txt")
+
+
+    def export_kaleida_sheet(self, writer):
+        voltage = None
+        capacity_data_by_cycle = {}
+        # 最初のサイクルの電圧を取得
+        for cycle in sorted(self.data_by_cycle.keys(), key=lambda x: int(x)):
+            df = self.data_by_cycle[cycle]
+            dis_df = df[df["Mode"] == "DIS"]
+            if voltage is None and not dis_df.empty:
+                voltage = dis_df["Voltage(V)"].tolist()
+            cap_list = dis_df["Capacity(mAh/g)"].tolist()
+            capacity_data_by_cycle[int(cycle)] = cap_list
+
+        if voltage is None:
+            return  # 電圧情報が取得できなければ出力しない
+
+        df_kaleida = pd.DataFrame({"Voltage": voltage})
+        for cycle_num in sorted(capacity_data_by_cycle.keys()):
+            df_kaleida[f"Cycle {cycle_num}"] = pd.Series(capacity_data_by_cycle[cycle_num])
+
+        df_kaleida.to_excel(writer, sheet_name="Kaleida", index=False)
+
 
 class CyclePlotterMainWindow(QMainWindow):
     def __init__(self):
