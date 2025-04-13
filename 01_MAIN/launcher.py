@@ -31,7 +31,7 @@ class Launcher(QWidget):
         subprocess.Popen([sys.executable, target])
 
     def launch_visualizer_gui(self):
-        target = os.path.join(self.base_dir, "DisChg_Chg_visualizer_ver1.5.py")
+        target = os.path.join(self.base_dir, "DisChg_Chg_visualizer_ver1.6.py")
         subprocess.Popen([sys.executable, target])
 
 if __name__ == "__main__":
