@@ -85,8 +85,8 @@ class CyclePlotterWidget(QWidget):
 
         self.load_btn = QPushButton("データ読み込み")
         self.monoqlo_btn = QPushButton("MONOQLO OFF")
-        self.all_plot_btn = QPushButton("充放電曲線(全表示)")
-        self.select_plot_btn = QPushButton("充放電曲線(選択表示)")
+        self.all_plot_btn = QPushButton("充放電曲線 (全表示)")
+        self.select_plot_btn = QPushButton("充放電曲線 (選択表示)")
         self.dis_cap_btn = QPushButton("サイクルプロット-クーロン効率")
 
         for btn in [self.load_btn, self.monoqlo_btn, self.all_plot_btn, self.select_plot_btn, self.dis_cap_btn]:
@@ -425,15 +425,22 @@ class CyclePlotterWidget(QWidget):
                 end = int(match.group(2)) if match.group(2) else start
                 selected.update(str(i) for i in range(start, end+1))
         valid_cycles = sorted([c for c in self.data_by_cycle.keys() if c in selected], key=lambda x: int(x))
+
         for i in range(self.list_widget.count()):
             item = self.list_widget.item(i)
             cycle = item.text().split()[-1]
+            item.setCheckState(Qt.Unchecked)
             if cycle in valid_cycles:
                 item.setCheckState(Qt.Checked)
+
         if not valid_cycles:
             QMessageBox.warning(self, "エラー", "該当するサイクルが存在しません")
             return
+
         self.plot_data(valid_cycles)
+
+        # ✅ 範囲選択されたサイクルを記録して内部状態も更新
+        self.last_plotted_cycles = valid_cycles
 
     def export_to_excel(self):
         if not self.last_plotted_cycles:

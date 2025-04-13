@@ -425,11 +425,14 @@ class CyclePlotterWidget(QWidget):
                 end = int(match.group(2)) if match.group(2) else start
                 selected.update(str(i) for i in range(start, end+1))
         valid_cycles = sorted([c for c in self.data_by_cycle.keys() if c in selected], key=lambda x: int(x))
+
         for i in range(self.list_widget.count()):
             item = self.list_widget.item(i)
             cycle = item.text().split()[-1]
+            item.setCheckState(Qt.Unchecked)
             if cycle in valid_cycles:
                 item.setCheckState(Qt.Checked)
+
         if not valid_cycles:
             QMessageBox.warning(self, "エラー", "該当するサイクルが存在しません")
             return
