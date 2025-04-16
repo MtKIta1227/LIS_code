@@ -111,7 +111,7 @@ class CellSpecEditor(QWidget):
     
     
     
-    def parse_text(self):
+    def pa  rse_text(self):
         import re
         text = self.paste_text.toPlainText().strip()
         if not text:
