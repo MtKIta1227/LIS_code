@@ -632,53 +632,39 @@ class CyclePlotterWidget(QWidget):
             # --- 2) EfficiencyData sheet ---
             ws2 = workbook.add_worksheet("EfficiencyData")
             writer.sheets["EfficiencyData"] = ws2
-
-            # ヘッダ行を作成
-            headers = ["Cycle"]
+            
+            # 最も多くのサイクル数を持つサンプルを取得
+            max_len = 0
+            max_sample = None
+            for sample, cycles in self.data_by_sample.items():
+                if len(cycles) > max_len:
+                    max_len = len(cycles)
+                    max_sample = sample
+            
+            # Cycle列（左端）を作成（最大サイクル数に基づく）
+            cycles_sorted = sorted(self.data_by_sample[max_sample].keys(), key=lambda x: int(x))
+            ws2.write(0, 0, "Cycle")
+            for i, cycle in enumerate(cycles_sorted):
+                ws2.write(i + 1, 0, int(cycle))
+            
+            # 各サンプルのDIS容量とEFF(%)をそれぞれ2列ずつ出力
+            col = 1
             for sample in sorted(self.data_by_sample.keys()):
-                headers += [f"{sample} DIS", f"{sample} EFF (%)"]
-            for col_idx, header in enumerate(headers):
-                ws2.write(0, col_idx, header)
-
-            row = 1
-            if self.multi_sample_mode:
-                # サンプルごとに行をまとめ、Cycle 列に「先頭10文字＋Cycle番号」を記載
-                for sample in sorted(self.data_by_sample.keys()):
-                    cycles_sorted = sorted(self.data_by_sample[sample].keys(), key=lambda x: int(x))
-                    for cycle in cycles_sorted:
-                        label = f"{sample[:10]}{cycle}"
-                        ws2.write(row, 0, label)
-
-                        # 各サンプル列を走査し、自分自身の列だけ値を入れる
-                        col = 1
-                        for s in sorted(self.data_by_sample.keys()):
-                            if s == sample:
-                                df = self.data_by_sample[s][cycle]
-                                dis_df = df[df["Mode"] == "DIS"]
-                                chg_df = df[df["Mode"] == "CHG"]
-                                dis_max = dis_df["Capacity(mAh/g)"].max() if not dis_df.empty else None
-                                chg_max = chg_df["Capacity(mAh/g)"].max() if not chg_df.empty else None
-                                eff_pct = (chg_max / dis_max * 100) if dis_max and chg_max is not None else None
-                                ws2.write(row, col,     dis_max)
-                                ws2.write(row, col + 1, eff_pct)
-                            col += 2
-                        row += 1
-            else:
-                # 単一サンプル時は従来通り Cycle 列に数値のみ
-                sample = list(self.data_by_sample.keys())[0]
-                cycles_sorted = sorted(self.data_by_sample[sample].keys(), key=lambda x: int(x))
-                for cycle in cycles_sorted:
-                    ws2.write(row, 0, int(cycle))
-                    df = self.data_by_sample[sample][cycle]
-                    dis_df = df[df["Mode"] == "DIS"]
-                    chg_df = df[df["Mode"] == "CHG"]
-                    dis_max = dis_df["Capacity(mAh/g)"].max() if not dis_df.empty else None
-                    chg_max = chg_df["Capacity(mAh/g)"].max() if not chg_df.empty else None
-                    eff_pct = (chg_max / dis_max * 100) if dis_max and chg_max is not None else None
-                    ws2.write(row, 1, dis_max)
-                    ws2.write(row, 2, eff_pct)
-                    row += 1
-
+                ws2.write(0, col,     f"{sample} DIS")
+                ws2.write(0, col + 1, f"{sample} EFF (%)")
+                sample_cycles = self.data_by_sample[sample]
+                for i, cycle in enumerate(cycles_sorted):
+                    df = sample_cycles.get(cycle)
+                    if df is not None:
+                        dis_df = df[df["Mode"] == "DIS"]
+                        chg_df = df[df["Mode"] == "CHG"]
+                        dis_max = dis_df["Capacity(mAh/g)"].max() if not dis_df.empty else None
+                        chg_max = chg_df["Capacity(mAh/g)"].max() if not chg_df.empty else None
+                        eff_pct = (chg_max / dis_max * 100) if dis_max and chg_max is not None else None
+                        ws2.write(i + 1, col,     dis_max)
+                        ws2.write(i + 1, col + 1, eff_pct)
+                col += 2
+            
             
             # --- 3) Kaleida sheet ---
             ws_kaleida = workbook.add_worksheet("Kaleida")
