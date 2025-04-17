@@ -561,14 +561,29 @@ class CyclePlotterWidget(QWidget):
         if not self.last_plotted_cycles:
             QMessageBox.warning(self, "No Data", "No plotted data to export")
             return
-        default_name = "MultiSample_Output" if self.multi_sample_mode else list(self.data_by_sample.keys())[0]
+    
+        # --- Determine default filename ---
+        selected_samples = set(
+            id_item[0] if isinstance(id_item, (tuple, list)) and len(id_item) == 2
+            else list(self.data_by_sample.keys())[0]
+            for id_item in self.last_plotted_cycles
+        )
+        if len(selected_samples) == 1:
+            default_name = list(selected_samples)[0]
+        else:
+            default_name = "MultiSample_Output"
         default_path = os.path.join(os.getcwd(), default_name + ".xlsx")
-        path, _ = QFileDialog.getSaveFileName(self, "Save Excel File", default_path, filter="Excel Files (*.xlsx)")
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save Excel File", default_path, filter="Excel Files (*.xlsx)"
+        )
         if not path:
             return
+    
         import xlsxwriter
         with pd.ExcelWriter(path, engine='xlsxwriter') as writer:
             workbook = writer.book
+    
+            # --- 1) GraphData sheet as before ---
             ws1 = workbook.add_worksheet("GraphData")
             writer.sheets["GraphData"] = ws1
             chart1 = workbook.add_chart({'type': 'scatter', 'subtype': 'straight'})
@@ -576,133 +591,128 @@ class CyclePlotterWidget(QWidget):
             for id_item in self.last_plotted_cycles:
                 if isinstance(id_item, (tuple, list)) and len(id_item) == 2:
                     sample, cycle = id_item
-                    df = self.data_by_sample.get(sample, {}).get(cycle)
+                    df = self.data_by_sample[sample][cycle]
                     header = f"{sample} Cycle {cycle}"
                 else:
                     sample = list(self.data_by_sample.keys())[0]
                     cycle = id_item
-                    df = self.data_by_sample[sample].get(cycle)
+                    df = self.data_by_sample[sample][cycle]
                     header = f"Cycle {cycle}"
-                if df is None:
-                    continue
+    
                 df = df[df["Mode"].isin(["DIS", "CHG"])]
                 cap, vol = [], []
                 for mode in ["DIS", "CHG"]:
-                    df_mode = df[df["Mode"]==mode].sort_values("Capacity(mAh/g)")
+                    df_mode = df[df["Mode"] == mode].sort_values("Capacity(mAh/g)")
                     cap += df_mode["Capacity(mAh/g)"].tolist() + [None]
                     vol += df_mode["Voltage(V)"].tolist() + [None]
+    
                 ws1.write(0, col, header)
                 ws1.write(1, col, "Capacity")
                 ws1.write(1, col+1, "Voltage")
                 for row in range(len(cap)):
-                    ws1.write(row+2, col, cap[row])
+                    ws1.write(row+2, col,   cap[row])
                     ws1.write(row+2, col+1, vol[row])
                 col_letter = col_idx_to_excel_col(col)
                 chart1.add_series({
-                    'name': f"=GraphData!${col_letter}$1",
-                    'categories': ["GraphData", 2, col, len(cap)+1, col],
-                    'values': ["GraphData", 2, col+1, len(vol)+1, col+1],
-                    'marker': {'type': 'none'},
-                    'line': {'width': 1.5},
+                    'name':      f"=GraphData!${col_letter}$1",
+                    'categories': ["GraphData", 2, col,     len(cap)+1, col],
+                    'values':     ["GraphData", 2, col+1, len(vol)+1, col+1],
+                    'marker':     {'type': 'none'},
+                    'line':       {'width': 1.5},
                 })
                 col += 2
+    
             chart1.set_title({'name': 'Capacity-Voltage Scatter Plot'})
             chart1.set_x_axis({'name': 'Capacity (mAh/g)', 'min': 0})
             chart1.set_y_axis({'name': 'Voltage (V)', 'min': 0.5, 'max': 3.5})
             chart1.set_style(11)
             ws1.insert_chart("K2", chart1)
-
+    
+            
+            # --- 2) EfficiencyData sheet ---
             ws2 = workbook.add_worksheet("EfficiencyData")
             writer.sheets["EfficiencyData"] = ws2
-            row_idx = 0
-            ws2.write(row_idx, 0, "Sample")
-            ws2.write(row_idx, 1, "Cycle")
-            ws2.write(row_idx, 2, "Max DIS Capacity")
-            ws2.write(row_idx, 3, "Coulombic Efficiency (%)")
-            row_idx += 1
-            
+
+            # ヘッダ行を作成
+            headers = ["Cycle"]
+            for sample in sorted(self.data_by_sample.keys()):
+                headers += [f"{sample} DIS", f"{sample} EFF (%)"]
+            for col_idx, header in enumerate(headers):
+                ws2.write(0, col_idx, header)
+
+            row = 1
             if self.multi_sample_mode:
+                # サンプルごとに行をまとめ、Cycle 列に「先頭10文字＋Cycle番号」を記載
                 for sample in sorted(self.data_by_sample.keys()):
-                    for cycle in sorted(self.data_by_sample[sample].keys(), key=lambda x: int(x)):
-                        df = self.data_by_sample[sample][cycle]
-                        dis_df = df[df["Mode"] == "DIS"]
-                        chg_df = df[df["Mode"] == "CHG"]
-                        if not dis_df.empty and not chg_df.empty:
-                            dis_max = dis_df["Capacity(mAh/g)"].max()
-                            chg_max = chg_df["Capacity(mAh/g)"].max()
-                            eff = chg_max / dis_max if dis_max != 0 else None
-                            ws2.write(row_idx, 0, sample)
-                            ws2.write(row_idx, 1, int(cycle))
-                            ws2.write(row_idx, 2, dis_max)
-                            ws2.write(row_idx, 3, eff * 100 if eff is not None else None)
-                            row_idx += 1
-                    row_idx += 1
+                    cycles_sorted = sorted(self.data_by_sample[sample].keys(), key=lambda x: int(x))
+                    for cycle in cycles_sorted:
+                        label = f"{sample[:10]}{cycle}"
+                        ws2.write(row, 0, label)
+
+                        # 各サンプル列を走査し、自分自身の列だけ値を入れる
+                        col = 1
+                        for s in sorted(self.data_by_sample.keys()):
+                            if s == sample:
+                                df = self.data_by_sample[s][cycle]
+                                dis_df = df[df["Mode"] == "DIS"]
+                                chg_df = df[df["Mode"] == "CHG"]
+                                dis_max = dis_df["Capacity(mAh/g)"].max() if not dis_df.empty else None
+                                chg_max = chg_df["Capacity(mAh/g)"].max() if not chg_df.empty else None
+                                eff_pct = (chg_max / dis_max * 100) if dis_max and chg_max is not None else None
+                                ws2.write(row, col,     dis_max)
+                                ws2.write(row, col + 1, eff_pct)
+                            col += 2
+                        row += 1
             else:
+                # 単一サンプル時は従来通り Cycle 列に数値のみ
                 sample = list(self.data_by_sample.keys())[0]
-                for cycle in sorted(self.data_by_sample[sample].keys(), key=lambda x: int(x)):
+                cycles_sorted = sorted(self.data_by_sample[sample].keys(), key=lambda x: int(x))
+                for cycle in cycles_sorted:
+                    ws2.write(row, 0, int(cycle))
                     df = self.data_by_sample[sample][cycle]
                     dis_df = df[df["Mode"] == "DIS"]
                     chg_df = df[df["Mode"] == "CHG"]
-                    if not dis_df.empty and not chg_df.empty:
-                        dis_max = dis_df["Capacity(mAh/g)"].max()
-                        chg_max = chg_df["Capacity(mAh/g)"].max()
-                        eff = chg_max / dis_max if dis_df["Capacity(mAh/g)"].max() != 0 else None
-                        ws2.write(row_idx, 0, sample)
-                        ws2.write(row_idx, 1, int(cycle))
-                        ws2.write(row_idx, 2, dis_max)
-                        ws2.write(row_idx, 3, eff * 100 if eff is not None else None)
-                        row_idx += 1
-                row_idx += 1
-            chart2 = workbook.add_chart({'type': 'scatter', 'subtype': 'straight'})
-            num_rows = row_idx - 1
-            chart2.add_series({
-                'name': 'Max DIS Capacity',
-                'categories': ['EfficiencyData', 1, 1, num_rows, 1],
-                'values':     ['EfficiencyData', 1, 2, num_rows, 2],
-                'marker': {'type': 'circle'},
-            })
-            chart2.add_series({
-                'name': 'Coulombic Efficiency (%)',
-                'categories': ['EfficiencyData', 1, 1, num_rows, 1],
-                'values':     ['EfficiencyData', 1, 3, num_rows, 3],
-                'marker': {'type': 'square'},
-                'y2_axis': 1,
-            })
-            chart2.set_title({'name': 'Max DIS Capacity & Coulombic Efficiency'})
-            chart2.set_x_axis({'name': 'Cycle Number'})
-            chart2.set_y_axis({'name': 'Max DIS Capacity (mAh/g)'})
-            chart2.set_y2_axis({'name': 'Coulombic Efficiency (%)', 'min': 0, 'max': 110})
-            chart2.set_style(11)
-            ws2.insert_chart("E2", chart2)
+                    dis_max = dis_df["Capacity(mAh/g)"].max() if not dis_df.empty else None
+                    chg_max = chg_df["Capacity(mAh/g)"].max() if not chg_df.empty else None
+                    eff_pct = (chg_max / dis_max * 100) if dis_max and chg_max is not None else None
+                    ws2.write(row, 1, dis_max)
+                    ws2.write(row, 2, eff_pct)
+                    row += 1
 
+            
+            # --- 3) Kaleida sheet ---
             ws_kaleida = workbook.add_worksheet("Kaleida")
             col = 0
             for id_item in self.last_plotted_cycles:
                 if isinstance(id_item, (tuple, list)) and len(id_item) == 2:
                     sample, cycle = id_item
-                    df = self.data_by_sample.get(sample, {}).get(cycle)
-                    header = f"{sample} Cycle {cycle}"
                 else:
                     sample = list(self.data_by_sample.keys())[0]
                     cycle = id_item
-                    df = self.data_by_sample[sample].get(cycle)
-                    header = f"Cycle {cycle}"
-                if df is None:
-                    continue
-                df = df[df["Mode"].isin(["DIS", "CHG"])]
-                cap, vol = [], []
-                for mode in ["DIS", "CHG"]:
-                    df_mode = df[df["Mode"]==mode].sort_values("Capacity(mAh/g)")
-                    vol += df_mode["Voltage(V)"].tolist() + [None]
-                    cap += df_mode["Capacity(mAh/g)"].tolist() + [None]
-                ws_kaleida.write(0, col, "Voltage")
-                ws_kaleida.write(0, col+1, header)
-                for row in range(len(vol)):
-                    ws_kaleida.write(row+1, col, vol[row])
-                    ws_kaleida.write(row+1, col+1, cap[row])
-                col += 2
 
-            # ElectrodeInfo シートの追加
+                df = self.data_by_sample[sample][cycle]
+
+                # --- ヘッダ名の生成 ---
+                if self.multi_sample_mode or (len(self.data_by_sample) > 1):
+                    header = f"{sample[:10]}Cycle{cycle}"  # サンプル名(先頭10)＋Cycle数
+                else:
+                    header = f"Cycle{cycle}"               # Cycle数のみ
+
+                # DIS と CHG をまとめ、Voltage と Capacity を分けてリスト化
+                df = df[df["Mode"].isin(["DIS", "CHG"])]
+                vol, cap = [], []
+                for mode in ["DIS", "CHG"]:
+                    df_m = df[df["Mode"] == mode].sort_values("Capacity(mAh/g)")
+                    vol += df_m["Voltage(V)"].tolist() + [None]
+                    cap += df_m["Capacity(mAh/g)"].tolist() + [None]
+
+                ws_kaleida.write(0, col,     "Voltage")
+                ws_kaleida.write(0, col + 1, header)
+                for row in range(len(vol)):
+                    ws_kaleida.write(row + 1, col,     vol[row])
+                    ws_kaleida.write(row + 1, col + 1, cap[row])
+                col += 2
+# --- 4) ElectrodeInfo sheet as before ---
             ws_info = workbook.add_worksheet("ElectrodeInfo")
             writer.sheets["ElectrodeInfo"] = ws_info
             ws_info.write(0, 0, "Sample")
@@ -712,14 +722,14 @@ class CyclePlotterWidget(QWidget):
             for sample in sorted(self.data_by_sample.keys()):
                 info_path = os.path.join(info_dir, f"{sample}.txt")
                 if os.path.exists(info_path):
-                    with open(info_path, "r", encoding="utf-8") as f:
-                        lines_info = f.readlines()
+                    lines_info = open(info_path, "r", encoding="utf-8").read().splitlines()
                 else:
                     lines_info = [f"No INFO file found for sample: {sample}"]
                 ws_info.write(info_row, 0, sample)
                 for i, line in enumerate(lines_info):
-                    ws_info.write(info_row + i, 1, line.strip())
+                    ws_info.write(info_row + i, 1, line)
                 info_row += max(1, len(lines_info)) + 1
+    
         self.update_status(f"Excel saved: {os.path.basename(path)}")
 
     def save_info_text(self):
