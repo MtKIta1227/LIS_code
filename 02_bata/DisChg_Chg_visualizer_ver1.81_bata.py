@@ -131,24 +131,29 @@ class CyclePlotterWidget(QWidget):
         # ---------------------
         self.select_all_btn = QPushButton("Select All")
         self.deselect_all_btn = QPushButton("Deselect All")
-        self.all_plot_btn = QPushButton("Plot All")
+        self.info_save_btn = QPushButton("Save INFO")
         self.select_plot_btn = QPushButton("Plot Selected")
         self.range_plot_btn = QPushButton("Plot Range")
         self.dis_cap_btn = QPushButton("Show Efficiency")
         self.to_excel_btn = QPushButton("Export Excel")
+        self.all_plot_btn = QPushButton("Plot All")
         self.monoqlo_btn = QPushButton("MONOQLO OFF")
-        self.info_save_btn = QPushButton("Save INFO")bottom_panel = QHBoxLayout()
-bottom_panel.addWidget(self.select_all_btn)
-bottom_panel.addWidget(self.deselect_all_btn)
-bottom_panel.addWidget(self.info_save_btn)
-bottom_panel.addWidget(self.range_plot_btn)
-bottom_panel.addWidget(self.select_plot_btn)
-bottom_panel.addWidget(self.all_plot_btn)
-bottom_panel.addWidget(self.dis_cap_btn)
-bottom_panel.addWidget(self.to_excel_btn)
-bottom_panel.addWidget(self.monoqlo_btn)
-main_layout.addLayout(bottom_panel)
 
+        bottom_panel = QHBoxLayout()
+        bottom_panel.addWidget(self.select_all_btn)
+        bottom_panel.addWidget(self.deselect_all_btn)
+        bottom_panel.addWidget(self.info_save_btn)
+        bottom_panel.addWidget(self.range_plot_btn)
+        bottom_panel.addWidget(self.select_plot_btn)
+        bottom_panel.addWidget(self.all_plot_btn)
+        bottom_panel.addWidget(self.dis_cap_btn)
+        bottom_panel.addWidget(self.to_excel_btn)
+        bottom_panel.addWidget(self.monoqlo_btn)
+
+        main_layout = QVBoxLayout()
+        main_layout.addLayout(top_toolbar)
+        main_layout.addWidget(main_splitter)
+        main_layout.addLayout(bottom_panel)
         self.setLayout(main_layout)
 
         # ---------------------
@@ -370,7 +375,7 @@ main_layout.addLayout(bottom_panel)
         else:
             return
 
-        text, ok = QInputDialog.getText(self, "Input Cycle Range", "Enter cycle numbers (e.g. 1-3,6,8):")
+        text, ok = QInputDialog.getText(self, "Input Cycle Range", "Enter cycle numbers (e.g. 1-3,6,8):", text="1,2,10,30,50,100,200,300")
         if not ok or not text:
             return
         pattern = re.compile(r'(\d+)(?:-(\d+))?')
