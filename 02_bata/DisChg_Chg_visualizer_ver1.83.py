@@ -61,9 +61,6 @@ class CyclePlotterWidget(QWidget):
         self.load_samples_btn = QPushButton("Load Samples")
         self.add_sample_btn = QPushButton("Add Sample")
         self.delete_sample_btn = QPushButton("Delete Sample")
-        # Moved select/deselect button definitions up
-        self.select_all_btn = QPushButton("Select All")
-        self.deselect_all_btn = QPushButton("Deselect All")
         top_toolbar = QHBoxLayout()
         top_toolbar.addWidget(self.load_samples_btn)
         top_toolbar.addWidget(self.add_sample_btn)
@@ -99,10 +96,6 @@ class CyclePlotterWidget(QWidget):
 
         left_layout = QVBoxLayout()
         left_layout.addLayout(filter_layout)
-        btn_layout = QHBoxLayout()
-        btn_layout.addWidget(self.select_all_btn)
-        btn_layout.addWidget(self.deselect_all_btn)
-        left_layout.addLayout(btn_layout)
         left_layout.addWidget(self.list_widget)
         left_layout.addWidget(QLabel("INFO"))
         left_layout.addWidget(self.info_textbox)
@@ -144,21 +137,18 @@ class CyclePlotterWidget(QWidget):
         self.dis_cap_btn = QPushButton("Show Efficiency")
         self.to_excel_btn = QPushButton("Export Excel")
         self.monoqlo_btn = QPushButton("MONOQLO OFF")
-        self.info_save_btn = QPushButton("Save INFO")
+        self.info_save_btn = QPushButton("Save INFO")bottom_panel = QHBoxLayout()
+bottom_panel.addWidget(self.select_all_btn)
+bottom_panel.addWidget(self.deselect_all_btn)
+bottom_panel.addWidget(self.info_save_btn)
+bottom_panel.addWidget(self.range_plot_btn)
+bottom_panel.addWidget(self.select_plot_btn)
+bottom_panel.addWidget(self.all_plot_btn)
+bottom_panel.addWidget(self.dis_cap_btn)
+bottom_panel.addWidget(self.to_excel_btn)
+bottom_panel.addWidget(self.monoqlo_btn)
+main_layout.addLayout(bottom_panel)
 
-        bottom_panel = QHBoxLayout()
-        bottom_panel.addWidget(self.all_plot_btn)
-        bottom_panel.addWidget(self.select_plot_btn)
-        bottom_panel.addWidget(self.range_plot_btn)
-        bottom_panel.addWidget(self.dis_cap_btn)
-        bottom_panel.addWidget(self.to_excel_btn)
-        bottom_panel.addWidget(self.monoqlo_btn)
-        bottom_panel.addWidget(self.info_save_btn)
-
-        main_layout = QVBoxLayout()
-        main_layout.addLayout(top_toolbar)
-        main_layout.addWidget(main_splitter)
-        main_layout.addLayout(bottom_panel)
         self.setLayout(main_layout)
 
         # ---------------------
@@ -294,8 +284,6 @@ class CyclePlotterWidget(QWidget):
                 self.data_by_sample[sample_name][cycle] = df
                 
                 item = QListWidgetItem()
-                
-                item.setFlags(item.flags() | Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
                 item.setData(Qt.UserRole, (sample_name, cycle))
                 display_sample = self.shorten_text(sample_name, 150)
                 if self.multi_sample_mode or (len(self.data_by_sample) > 1):
