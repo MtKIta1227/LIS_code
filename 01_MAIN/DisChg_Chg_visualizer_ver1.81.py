@@ -133,7 +133,9 @@ class CyclePlotterWidget(QWidget):
         # 下部パネル：各種操作ボタン
         # ---------------------
         self.select_all_btn = QPushButton("Select All")
+        self.select_all_btn.setFixedWidth(135)
         self.deselect_all_btn = QPushButton("Deselect All")
+        self.deselect_all_btn.setFixedWidth(135)
         #Save INFOのボタンの色を変更
         self.info_save_btn = QPushButton("Save INFO")
         self.info_save_btn.setStyleSheet("background-color: lightblue; color: black;")
