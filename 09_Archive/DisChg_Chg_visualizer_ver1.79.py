@@ -375,7 +375,9 @@ class CyclePlotterWidget(QWidget):
         else:
             return
 
-        text, ok = QInputDialog.getText(self, "Input Cycle Range", "Enter cycle numbers (e.g. 1-3,6,8):")
+        text, ok = QInputDialog.getText(self, "Input Cycle Range", "Enter cycle numbers (e.g. 1-3,6,8):",text="1,2,10,30,50,100,200,300")
+
+
         if not ok or not text:
             return
         pattern = re.compile(r'(\d+)(?:-(\d+))?')
@@ -440,8 +442,11 @@ class CyclePlotterWidget(QWidget):
                     # 元のラベル例
                     label = f"{sample} Cycle {cycle}"
                 else:
-                    alpha = 1.0 if self.mono_mode else 1.0 - 0.1 * ((cycle_num - 1) % 10)
-                    color = "black" if self.mono_mode else cmap_used(((cycle_num - 1) % 10) % cmap_used.N)
+                    group_index = (cycle_num - 1) // 10
+                    step_within_group = (cycle_num - 1) % 10
+                    cmap_local = matplotlib.cm.get_cmap("tab20", 20)
+                    color = "black" if self.mono_mode else cmap_local(group_index % cmap_local.N)
+                    alpha = 1.0 if self.mono_mode else 1.0 - 0.07 * step_within_group
                     label = f"Cycle {cycle}"
             else:
                 sample = list(self.data_by_sample.keys())[0]

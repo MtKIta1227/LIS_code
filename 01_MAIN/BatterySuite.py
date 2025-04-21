@@ -7,7 +7,7 @@ BatterySuite 1.0
   Tab 2 : Cycle Analyzer Table
   Tab 3 : Cell‑Spec Editor
 ------------------------------------------------
-既存ファイル : DisChg_Chg_visualizer_ver1.79.py
+既存ファイル : DisChg_Chg_visualizer_ver1.81.py
                CycleAnalysisl.py
                INFO_ver2.0.py
 同じフォルダに置いたまま、本スクリプトを実行してください。
@@ -24,7 +24,7 @@ def load_class(file_name, class_name):
     spec.loader.exec_module(mod)
     return getattr(mod, class_name)
 
-CyclePlotterWidget = load_class("DisChg_Chg_visualizer_ver1.79.py", "CyclePlotterWidget")
+CyclePlotterWidget = load_class("DisChg_Chg_visualizer_ver1.81.py", "CyclePlotterWidget")
 CycleAnalysisGUI   = load_class("CycleAnalysisl.py",                    "CycleAnalysisGUI")
 CellSpecEditor     = load_class("INFO_ver2.0.py",                       "CellSpecEditor")
 
@@ -36,9 +36,9 @@ class BatterySuite(QMainWindow):
         self.resize(1280, 820)
 
         tabs = QTabWidget()
-        tabs.addTab(self.wrap(CyclePlotterWidget()), "Plot & Export")
-        tabs.addTab(self.wrap(CycleAnalysisGUI ()), "Cycle Analyzer")
+        tabs.addTab(self.wrap(CyclePlotterWidget()), "Curve-Cycle")
         tabs.addTab(self.wrap(CellSpecEditor   ()), "Cell Spec Editor")
+        tabs.addTab(self.wrap(CycleAnalysisGUI ()), "Cycle Analyzer")
 
         self.setCentralWidget(tabs)
 
