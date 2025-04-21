@@ -59,11 +59,8 @@ class CyclePlotterWidget(QWidget):
         # 上部ツールバー：Load Samplesボタン
         # ---------------------
         self.load_samples_btn = QPushButton("Load Samples")
-        self.load_samples_btn.setStyleSheet("background-color: lightblue; color: black;")
         self.add_sample_btn = QPushButton("Add Sample")
-        self.add_sample_btn.setStyleSheet("background-color: lightblue; color: black;")
         self.delete_sample_btn = QPushButton("Delete Sample")
-        self.delete_sample_btn.setStyleSheet("background-color: gray; color: black;")
         top_toolbar = QHBoxLayout()
         top_toolbar.addWidget(self.load_samples_btn)
         top_toolbar.addWidget(self.add_sample_btn)
@@ -134,36 +131,25 @@ class CyclePlotterWidget(QWidget):
         # ---------------------
         self.select_all_btn = QPushButton("Select All")
         self.deselect_all_btn = QPushButton("Deselect All")
-        #Save INFOのボタンの色を変更
-        self.info_save_btn = QPushButton("Save INFO")
-        self.info_save_btn.setStyleSheet("background-color: lightblue; color: black;")
-        self.select_plot_btn = QPushButton("Plot Selected")
-        self.select_plot_btn.setStyleSheet("background-color: lightgreen; color: black;")
-        self.range_plot_btn = QPushButton("Select Range")
-        self.range_plot_btn.setStyleSheet("background-color: lightgreen; color: black;")
-        self.dis_cap_btn = QPushButton("Show Efficiency")
-        self.dis_cap_btn.setStyleSheet("background-color: orange; color: black;")
-        self.to_excel_btn = QPushButton("Export Excel")
-        self.to_excel_btn.setStyleSheet("background-color: yellow; color: black;")
         self.all_plot_btn = QPushButton("Plot All")
-        self.all_plot_btn.setStyleSheet("background-color: lightgreen; color: black;")
+        self.select_plot_btn = QPushButton("Plot Selected")
+        self.range_plot_btn = QPushButton("Plot Range")
+        self.dis_cap_btn = QPushButton("Show Efficiency")
+        self.to_excel_btn = QPushButton("Export Excel")
         self.monoqlo_btn = QPushButton("MONOQLO OFF")
+        self.info_save_btn = QPushButton("Save INFO")
+bottom_panel = QHBoxLayout()
+bottom_panel.addWidget(self.select_all_btn)     # 1
+bottom_panel.addWidget(self.deselect_all_btn)    # 2
+bottom_panel.addWidget(self.info_save_btn)       # 9 → 3rd
+bottom_panel.addWidget(self.range_plot_btn)      # 5 → 4th
+bottom_panel.addWidget(self.select_plot_btn)     # 4 → 5th
+bottom_panel.addWidget(self.all_plot_btn)        # 3 → 6th
+bottom_panel.addWidget(self.dis_cap_btn)         # 6 → 7th
+bottom_panel.addWidget(self.to_excel_btn)        # 7 → 8th
+bottom_panel.addWidget(self.monoqlo_btn)         # 8 → 9th
+main_layout.addLayout(bottom_panel)
 
-        bottom_panel = QHBoxLayout()
-        bottom_panel.addWidget(self.select_all_btn)
-        bottom_panel.addWidget(self.deselect_all_btn)
-        bottom_panel.addWidget(self.info_save_btn)
-        bottom_panel.addWidget(self.range_plot_btn)
-        bottom_panel.addWidget(self.select_plot_btn)
-        bottom_panel.addWidget(self.all_plot_btn)
-        bottom_panel.addWidget(self.dis_cap_btn)
-        bottom_panel.addWidget(self.to_excel_btn)
-        bottom_panel.addWidget(self.monoqlo_btn)
-
-        main_layout = QVBoxLayout()
-        main_layout.addLayout(top_toolbar)
-        main_layout.addWidget(main_splitter)
-        main_layout.addLayout(bottom_panel)
         self.setLayout(main_layout)
 
         # ---------------------
@@ -385,7 +371,7 @@ class CyclePlotterWidget(QWidget):
         else:
             return
 
-        text, ok = QInputDialog.getText(self, "Input Cycle Range", "Enter cycle numbers (e.g. 1-3,6,8):", text="1,2,10,30,50,100,200,300")
+        text, ok = QInputDialog.getText(self, "Input Cycle Range", "Enter cycle numbers (e.g. 1-3,6,8):")
         if not ok or not text:
             return
         pattern = re.compile(r'(\d+)(?:-(\d+))?')
