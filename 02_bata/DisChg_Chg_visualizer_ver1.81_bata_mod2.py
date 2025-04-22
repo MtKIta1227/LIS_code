@@ -28,6 +28,11 @@ from PyQt5.QtWidgets import (
     QTextEdit, QLineEdit, QLabel, QSplitter, QComboBox
 )
 from PyQt5.QtCore import Qt
+
+# Utility: shorten long sample names for list display (first 10 chars + "..." + last 4 chars)
+def shorten_sample_name(text: str, first_chars: int = 10, last_chars: int = 4) -> str:
+    return text if len(text) <= (first_chars + last_chars) else f"{text[:first_chars]}...{text[-last_chars:]}"
+
 from PyQt5.QtGui import QFontMetrics
 
 # Excel用の列番号→列記号変換関数
@@ -263,6 +268,7 @@ class CyclePlotterWidget(QWidget):
         selected_items = self.list_widget.selectedItems()
         if not selected_items:
             self.info_textbox.clear()
+            self.update_status()
             return
         data = selected_items[0].data(Qt.UserRole)
         if data:
@@ -277,6 +283,7 @@ class CyclePlotterWidget(QWidget):
         else:
             info_str = f"No INFO file found for sample: {sample}"
         self.info_textbox.setPlainText(info_str)
+        self.update_status()
 
     def load_sample_from_folder(self, sample_name, folder):
         self.data_by_sample[sample_name] = {}
@@ -302,7 +309,7 @@ class CyclePlotterWidget(QWidget):
                 
                 item = QListWidgetItem()
                 item.setData(Qt.UserRole, (sample_name, cycle))
-                display_sample = self.shorten_text(sample_name, 150)
+                display_sample = shorten_sample_name(sample_name)
                 if self.multi_sample_mode or (len(self.data_by_sample) > 1):
                     display_text = f"{display_sample}:{cycle}"
                 else:
@@ -325,7 +332,8 @@ class CyclePlotterWidget(QWidget):
                 data = item.data(Qt.UserRole)
                 if data:
                     sample, cycle = data
-                    item.setText(f"{sample}:{cycle}")
+                    short = shorten_sample_name(sample)
+                    item.setText(f"{short}:{cycle}")
 
     def load_samples(self):
         folder = QFileDialog.getExistingDirectory(self, "Select Folder Containing Sample(s)")
@@ -523,7 +531,9 @@ class CyclePlotterWidget(QWidget):
                 if cycles:
                     color = self.sample_colors.get(sample, "black")
                     self.ax.plot(cycles, max_dis_caps, color=color, marker='o', label=f"{sample} DIS")
+                    self.ax.yaxis.label.set_color("dodgerblue")
                     self.ax2.plot(cycles, [(e * 100 if e is not None else None) for e in efficiencies], color=color, marker='x', label=f"{sample} Eff")
+                    self.ax2.yaxis.label.set_color("darkorange")
             self.ax.set_ylim(0, None)
             self.ax2.set_ylim(0, 110)
         else:
@@ -546,9 +556,13 @@ class CyclePlotterWidget(QWidget):
                 self.ax2.plot([cycle], [efficiencies[i] * 100], color=color, marker='x', label="Coulombic eff." if i==0 else "")
             self.ax.set_ylim(0, max(max_dis_caps) * 1.1)
             self.ax2.set_ylim(0, 110)
-        self.ax.set_xlabel("Cycle", fontname="Arial", fontsize=axis_label_size)
+        self.ax.set_xlabel("Cycle number / -", fontname="Arial", fontsize=axis_label_size)
         self.ax.set_ylabel("Capacity (mAh/g)", fontname="Arial", fontsize=axis_label_size, color="dodgerblue")
+        self.ax.yaxis.label.set_color("dodgerblue")
+        self.ax.tick_params(axis='y', labelcolor="dodgerblue")
         self.ax2.set_ylabel("Coulombic Efficiency (%)", fontname="Arial", fontsize=axis_label_size, color="darkorange")
+        self.ax2.yaxis.label.set_color("darkorange")
+        self.ax2.tick_params(axis='y', labelcolor="darkorange")
         self.ax.tick_params(axis='both', direction='in', labelsize=tick_label_size)
         self.ax2.tick_params(axis='both', direction='in', labelsize=tick_label_size)
         self.ax.set_title("Discharge Capacity and Coulombic Efficiency", fontname="Arial", fontsize=title_size)
@@ -557,7 +571,7 @@ class CyclePlotterWidget(QWidget):
         combined_handles = handles1 + handles2
         combined_labels = labels1 + labels2
         ncol = 2 if len(combined_labels) > 20 else 1
-        self.ax.legend(combined_handles, combined_labels, loc="upper center", bbox_to_anchor=(0.5, -0.15),
+        self.ax.legend(combined_handles, combined_labels, loc="upper center", bbox_to_anchor=(0.5, -0.01),
                        fontsize=legend_size, frameon=True, ncol=ncol)
         self.canvas.figure.tight_layout()
         self.canvas.draw()
@@ -800,6 +814,41 @@ class CyclePlotterWidget(QWidget):
                     self.list_widget.takeItem(i)
             self.info_textbox.clear()
             self.update_status(f"Deleted sample '{sample_name}'.")
+
+    # --- NEW: update_status shows selected sample names ---
+    def update_status(self, message=""):
+        main_window = self.window()
+        from PyQt5.QtWidgets import QMainWindow  # local import to avoid circular issue
+        if not isinstance(main_window, QMainWindow):
+            if message:
+                print(message)
+            return
+
+        parts = []
+        # Show selected sample(s) if any
+        selected_items = self.list_widget.selectedItems()
+        if selected_items:
+            selected_samples = { (item.data(Qt.UserRole)[0] if item.data(Qt.UserRole) else item.text().split(":")[0]) for item in selected_items }
+            if len(selected_samples) == 1:
+                parts.append(f"Selected: {shorten_sample_name(next(iter(selected_samples)))}")
+            else:
+                preview = ', '.join(shorten_sample_name(s) for s in list(selected_samples)[:3])
+                if len(selected_samples) > 3:
+                    preview += ', ...'
+                parts.append(f"Selected: {preview} ({len(selected_samples)})")
+        else:
+            if self.multi_sample_mode:
+                parts.append("Multiple Samples Loaded")
+            elif self.data_by_sample:
+                sample_name = list(self.data_by_sample.keys())[0]
+                parts.append(sample_name)
+
+        if self.mono_mode:
+            parts.append("MONOQLO Mode")
+        if message:
+            parts.append(message)
+
+        main_window.statusBar().showMessage(" | ".join(parts))
 
 class CyclePlotterMainWindow(QMainWindow):
     def __init__(self):
