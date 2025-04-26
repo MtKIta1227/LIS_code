@@ -361,40 +361,41 @@ class CatBoostShapApp(QWidget):
             self._safe_process_events()
         self.progress.setValue(95)
 
-        # Top-10 ensuring all 活物質
-        completed=[t for t in study.trials if t.state==optuna.trial.TrialState.COMPLETE]
-        completed.sort(key=lambda t:t.value)
-        acts=choices['活物質']
-        selected=[]
-        for act in acts:
-            for t in completed:
-                if t.params.get('活物質')==act:
-                    selected.append(t)
-                    break
-        for t in completed:
-            if len(selected)>=10: break
-            if t not in selected:
-                selected.append(t)
-        rows=[]
-        for t in selected:
-            p=dict(t.params)
-            sol1,sol2,sol3=p['溶媒セット'].split(',')
-            salt1,salt2=p['塩セット'].split(',')
-            p.update({'溶媒1':sol1,'溶媒2':sol2,'溶媒3':sol3,'塩1':salt1,'塩2':salt2})
-            w1,w2,w3=t.user_attrs['溶媒1割合'],t.user_attrs['溶媒2割合'],t.user_attrs['溶媒3割合']
-            amt=t.user_attrs['添加剤1量(%)']
-            c1=t.user_attrs['塩1濃度(M)']; c2=t.user_attrs.get('塩2濃度(M)',0.0)
-            p['溶媒1割合'],p['溶媒2割合'],p['溶媒3割合']=round(w1,2),round(w2,2),round(w3,2)
-            p['添加剤1量(%)']=round(amt,2)
-            p['塩1濃度(M)']=round(c1,2); p['塩2濃度(M)']=round(c2,2)
-            for s in self.unique_solvents: p[f'比率_{s}']=round((sol1==s)*w1+(sol2==s)*w2+(sol3==s)*w3,2)
-            for s in self.unique_salts: p[f'濃度_{s}']=round((salt1==s)*c1+(salt2==s)*c2,2)
-            for a in self.unique_additives: p[f'量_{a}']=round((p['添加剤1']==a)*amt,2)
-            p['PredCap']=-t.value
+        # ---- Top-20 PredCap 降順 ----
+        completed = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
+        # t.value は -PredCap なので、小さい順にソート → PredCap大きい順になる
+        completed.sort(key=lambda t: t.value)
+
+        rows = []
+        for t in completed[:20]:
+            p = dict(t.params)
+            # 元のコードと同様にソルベント／ソルト欄を展開
+            sol1, sol2, sol3 = p['溶媒セット'].split(',')
+            salt1, salt2    = p['塩セット'].split(',')
+            p.update({'溶媒1':sol1, '溶媒2':sol2, '溶媒3':sol3,
+                      '塩1':salt1, '塩2':salt2})
+            # user_attrs から取り出した割合・濃度を丸め
+            w1 = t.user_attrs['溶媒1割合']; w2 = t.user_attrs['溶媒2割合']; w3 = t.user_attrs['溶媒3割合']
+            amt = t.user_attrs['添加剤1量(%)']
+            c1 = t.user_attrs['塩1濃度(M)']; c2 = t.user_attrs.get('塩2濃度(M)', 0.0)
+            p['溶媒1割合'],p['溶媒2割合'],p['溶媒3割合'] = round(w1,2),round(w2,2),round(w3,2)
+            p['添加剤1量(%)'] = round(amt,2)
+            p['塩1濃度(M)'], p['塩2濃度(M)'] = round(c1,2), round(c2,2)
+            # engineered 列も丸めて挿入
+            for s in self.unique_solvents:
+                p[f'比率_{s}'] = round((sol1==s)*w1 + (sol2==s)*w2 + (sol3==s)*w3, 2)
+            for s in self.unique_salts:
+                p[f'濃度_{s}'] = round((salt1==s)*c1 + (salt2==s)*c2, 2)
+            for a in self.unique_additives:
+                p[f'量_{a}']  = round((p['添加剤1']==a)*amt, 2)
+
+            # PredCap を追加
+            p['PredCap'] = -t.value
             rows.append(p)
 
-        df_top=pd.DataFrame(rows).reindex(columns=list(self.X_train.columns)+['PredCap'])
-        self.populate_table(self.table_optuna,df_top)
+        # DataFrame 化してテーブルにセット
+        df_top = pd.DataFrame(rows).reindex(columns=list(self.X_train.columns)+['PredCap'])
+        self.populate_table(self.table_optuna, df_top)
         self.tabs.setCurrentWidget(self.table_optuna)
         QMessageBox.information(self,"Optuna 最良レシピ",
                                 "\n".join(f"{k}: {df_top.iloc[0][k]}" for k in df_top.columns))
