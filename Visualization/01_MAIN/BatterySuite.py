@@ -3,8 +3,6 @@
 """
 BatterySuite 1.0
 ３機能統合版 GUI（PyQt5）
-<<<<<<< HEAD:01_MAIN/BatterySuite.py
-=======
   Tab 1 : Cycle Plotter & Excel Export
   Tab 2 : Cycle Analyzer Table
   Tab 3 : Cell‑Spec Editor
@@ -13,7 +11,6 @@ BatterySuite 1.0
                CycleAnalysisl.py
                INFO_ver2.0.py
 同じフォルダに置いたまま、本スクリプトを実行してください。
->>>>>>> fffed94cfae6a309b6c29d528b54a31a4e9f1c46:Visualization/01_MAIN/BatterySuite.py
 """
 
 import sys, os, importlib.util, traceback
@@ -21,18 +18,6 @@ from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QTabWidget, QVBo
 
 # ---------- 動的インポートで既存クラスを取得 ----------
 def load_class(file_name, class_name):
-<<<<<<< HEAD:01_MAIN/BatterySuite.py
-    try:
-        path = os.path.join(os.path.dirname(__file__), file_name)
-        spec = importlib.util.spec_from_file_location(class_name, path)
-        mod  = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        return getattr(mod, class_name)
-    except Exception as e:
-        error_msg = f"{file_name} の読み込みに失敗しました。\n\nエラー内容:\n{str(e)}\n\n詳細:\n{traceback.format_exc()}"
-        QMessageBox.critical(None, "モジュール読み込みエラー", error_msg)
-        raise  # 起動を止める
-=======
     path = os.path.join(os.path.dirname(__file__), file_name)
     spec = importlib.util.spec_from_file_location(class_name, path)
     mod  = importlib.util.module_from_spec(spec)
@@ -42,7 +27,6 @@ def load_class(file_name, class_name):
 CyclePlotterWidget = load_class("DisChg_Chg_visualizer_ver1.81.py", "CyclePlotterWidget")
 CycleAnalysisGUI   = load_class("CycleAnalysisl.py",                    "CycleAnalysisGUI")
 CellSpecEditor     = load_class("INFO_ver2.0.py",                       "CellSpecEditor")
->>>>>>> fffed94cfae6a309b6c29d528b54a31a4e9f1c46:Visualization/01_MAIN/BatterySuite.py
 
 # ---------- メインウィンドウ ----------
 class BatterySuite(QMainWindow):
@@ -52,22 +36,9 @@ class BatterySuite(QMainWindow):
         self.resize(1280, 820)
 
         tabs = QTabWidget()
-<<<<<<< HEAD:01_MAIN/BatterySuite.py
-        try:
-            CyclePlotterWidget = load_class("DisChg_Chg_visualizer_ver1.79.py", "CyclePlotterWidget")
-            CycleAnalysisGUI   = load_class("CycleAnalysisl.py", "CycleAnalysisGUI")
-            CellSpecEditor     = load_class("INFO_ver2.0.py", "CellSpecEditor")
-
-            tabs.addTab(self.wrap(CyclePlotterWidget()), "Plot & Export")
-            tabs.addTab(self.wrap(CycleAnalysisGUI ()), "Cycle Analyzer")
-            tabs.addTab(self.wrap(CellSpecEditor   ()), "Cell Spec Editor")
-        except Exception:
-            sys.exit(1)  # 起動失敗したら終了
-=======
         tabs.addTab(self.wrap(CyclePlotterWidget()), "Curve-Cycle")
         tabs.addTab(self.wrap(CellSpecEditor   ()), "Cell Spec Editor")
         tabs.addTab(self.wrap(CycleAnalysisGUI ()), "Cycle Analyzer")
->>>>>>> fffed94cfae6a309b6c29d528b54a31a4e9f1c46:Visualization/01_MAIN/BatterySuite.py
 
         self.setCentralWidget(tabs)
 
