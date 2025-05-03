@@ -44,6 +44,7 @@ OPTUNA_N_TRIALS   = 2000
 ENSEMBLE_SEEDS    = [42, 100, 2025]
 CATBOOST_ITERS     = 400
 
+# GUIクラス
 class CatBoostShapApp(QWidget):
     def __init__(self):
         super().__init__()
@@ -136,6 +137,7 @@ class CatBoostShapApp(QWidget):
         self.sample_X         = None
         self.shap_vals        = None
 
+  
     def _safe_process_events(self):
         QApplication.processEvents()
 
@@ -148,24 +150,34 @@ class CatBoostShapApp(QWidget):
             self.label.setText(f"選択中: {path.split('/')[-1]}")
             self.btn_train.setEnabled(True)
 
+    # Preprocess the DataFrame
+    # - Convert '2nd.放電容量' to numeric, dropping NaN rows in 'ロード量'
+    # - Fill NaN values with 0
+
     @staticmethod
     def preprocess(df):
-        df['2nd.放電容量'] = pd.to_numeric(df['2nd.放電容量'], errors='coerce')
-        df = df.dropna(subset=['ロード量']).copy()
-        return df.fillna(0)
+        df['2nd.放電容量'] = pd.to_numeric(df['2nd.放電容量'], errors='coerce') # Convert to numeric
+        df = df.dropna(subset=['ロード量']).copy()# Drop rows with NaN in 'ロード量'
+        return df.fillna(0)# Fill NaN values with 0
+        
 
+    # Train the model and calculate SHAP values
     def train_and_shap(self):
         try:
-            self.progress.setValue(5)
+            self.progress.setValue(5) 
             df = pd.read_excel(self.file_path, sheet_name="Raw_Data")
             df = self.preprocess(df)
-            # カテゴリ候補生成
+            #dfを全行表示
+            print(df)            
+
+            # 溶媒1, 溶媒2, 溶媒3 のユニークな値を取得
             self.unique_solvents = sorted({v for c in ('溶媒1','溶媒2','溶媒3') for v in df[c].unique() if str(v)!='0'})
             if len(self.unique_solvents)>=3:
                 self.solvent_sets = [','.join(c) for c in itertools.combinations(self.unique_solvents,3)]
             else:
                 fill = self.unique_solvents + ['0']*(3-len(self.unique_solvents))
                 self.solvent_sets = sorted({','.join(sorted(c)) for c in itertools.combinations_with_replacement(fill,3)})
+            # 塩1, 塩2 のユニークな値を取得
             self.unique_salts = sorted({v for c in ('塩1','塩2') for v in df[c].unique() if str(v)!='0'})
             if len(self.unique_salts)>=2:
                 self.salt_sets = [f"{s},0" for s in self.unique_salts] + [','.join(c) for c in itertools.combinations(self.unique_salts,2)]
@@ -173,6 +185,7 @@ class CatBoostShapApp(QWidget):
                 s = self.unique_salts[0] if self.unique_salts else '0'
                 self.salt_sets = [f"{s},0"]
             self.unique_additives = sorted(v for v in df['添加剤1'].unique() if v not in (0,0.0,'0'))
+
             # 特徴量エンジニアリング
             for s in self.unique_solvents:
                 df[f'比率_{s}'] = ((df['溶媒1']==s)*df['溶媒1割合'] + (df['溶媒2']==s)*df['溶媒2割合'] + (df['溶媒3']==s)*df['溶媒3割合'])
@@ -184,8 +197,10 @@ class CatBoostShapApp(QWidget):
                          '塩1','塩2','塩1濃度(M)','塩2濃度(M)','添加剤1','添加剤1量(%)']
             df = df.drop(columns=drop_cols)
             self.df = df
+            
             # 学習データ準備
-            y = df['2nd.放電容量'].values
+            #目的変数
+            y = df['2nd.放電容量'].values 
             X = df.drop(columns=['2nd.放電容量'])
             self.cat_cols = X.select_dtypes('object').columns.tolist()
             self.cat_idx  = [X.columns.get_loc(c) for c in self.cat_cols]

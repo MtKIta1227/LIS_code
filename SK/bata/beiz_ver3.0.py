@@ -13,7 +13,7 @@ import matplotlib.font_manager as fm
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QPushButton, QLabel, QComboBox, QFileDialog,
     QVBoxLayout, QHBoxLayout, QMessageBox, QProgressBar,
-    QTabWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QSpinBox, QDoubleSpinBox
+    QTabWidget, QTableWidget, QTableWidgetItem
 )
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from catboost import CatBoostRegressor, Pool
@@ -27,17 +27,13 @@ logging.basicConfig(level=logging.INFO)
 
 # 日本語フォント設定
 def set_jp_font():
-    osys = platform.system()
-    if osys == "Darwin":
-        fam = "Hiragino Maru Gothic Pro"
-    elif osys == "Windows":
-        for f in ["Yu Gothic","Meiryo","MS Gothic"]:
-            if f in [fm.name for fm in fm.fontManager.ttflist]:
-                fam = f; break
-        else:
-            fam = "MS Gothic"
-    else:
-        fam = "DejaVu Sans"
+    p = platform.system()
+    if p == "Darwin": fam = "Hiragino Maru Gothic Pro"
+    elif p == "Windows":
+        for c in ["Yu Gothic","Meiryo","MS Gothic"]:
+            if c in [f.name for f in fm.fontManager.ttflist]: fam = c; break
+        else: fam = "MS Gothic"
+    else: fam = "DejaVu Sans"
     plt.rcParams["font.family"] = fam
     plt.rcParams["axes.unicode_minus"] = False
 set_jp_font()
@@ -46,77 +42,77 @@ set_jp_font()
 SHAP_FULL_SAMPLE = True
 OPTUNA_N_TRIALS   = 2000
 ENSEMBLE_SEEDS    = [42, 100, 2025]
+CATBOOST_ITERS     = 400
 
+# GUIクラス
 class CatBoostShapApp(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("CatBoost Ensemble + SHAP GUI")
-        self.resize(1200, 850)
+        self.setWindowTitle("CatBoost Ensemble + SHAP GUI (fixed)")
+        self.resize(1100, 800)
 
-        # --- UI: ファイル選択 & 学習ボタン ---
-        self.label     = QLabel("Excel ファイルを選択してください")
-        self.btn_load  = QPushButton("ファイルを選択…")
-        self.btn_train = QPushButton("学習＆SHAP")
-        self.btn_train.setEnabled(False)
+        # --- UI components ---
+        self.label    = QLabel("Excel ファイルを選択してください")
+        self.btn_load = QPushButton("ファイルを選択…")
+        self.btn_train= QPushButton("学習＆SHAP")
 
-        # --- UI: ハイパーパラメータ ---
-        self.iter_label  = QLabel("iterations:")
-        self.iter_spin   = QSpinBox(); self.iter_spin.setRange(10,5000); self.iter_spin.setValue(400)
-        self.depth_label = QLabel("depth:")
-        self.depth_spin  = QSpinBox(); self.depth_spin.setRange(1,20); self.depth_spin.setValue(6)
-        self.lr_label    = QLabel("learning_rate:")
-        self.lr_spin     = QDoubleSpinBox(); self.lr_spin.setRange(0.001,1.0);
-        self.lr_spin.setSingleStep(0.01); self.lr_spin.setDecimals(3); self.lr_spin.setValue(0.05)
-
-        # --- UI: SHAP Binder ---
+        # SHAP全体 & バインダー別
         self.binder_cb            = QComboBox()
         self.btn_shap_by_binder   = QPushButton("Binder別SHAP")
         self.btn_shap_by_binder.setEnabled(False)
 
-        # --- UI: HeatMap & Optuna ---
-        self.heatmap_x_cb = QComboBox(); self.heatmap_y_cb = QComboBox()
-        self.btn_heatmap  = QPushButton("HeatMap 再描画"); self.btn_heatmap.setEnabled(False)
-        self.btn_allhm    = QPushButton("全ペアHeatMap"); self.btn_allhm.setEnabled(False)
-        self.btn_optuna   = QPushButton("ベイズ最適化"); self.btn_optuna.setEnabled(False)
-        self.btn_scatter  = QPushButton("Optuna 散布図"); self.btn_scatter.setEnabled(False)
+        # HeatMap controls
+        self.heatmap_x_cb = QComboBox()
+        self.heatmap_y_cb = QComboBox()
+        self.btn_heatmap  = QPushButton("HeatMap 再描画")
+        self.btn_allhm    = QPushButton("全ペアHeatMap")
+        self.btn_heatmap.setEnabled(False)
+        self.btn_allhm.setEnabled(False)
 
-        self.progress    = QProgressBar(); self.progress.setFormat("%p%")
+        # Optuna controls
+        self.btn_optuna  = QPushButton("ベイズ最適化")
+        self.btn_scatter = QPushButton("Optuna 散布図")
+        self.btn_optuna.setEnabled(False)
+        self.btn_scatter.setEnabled(False)
 
-        # --- Tabs ---
+        self.progress = QProgressBar()
+        self.progress.setFormat("%p%")
+
+        # Tabs
         self.tabs = QTabWidget()
-        # SHAP Summary タブ
-        self.fig_shap     = plt.figure(figsize=(6,4))
-        self.canvas_shap  = FigureCanvas(self.fig_shap)
+
+        # --- SHAP まとめタブ (ツールバー付き) ---
+        self.fig_shap    = plt.figure(figsize=(6,4))
+        self.canvas_shap = FigureCanvas(self.fig_shap)
         self.toolbar_shap = NavigationToolbar(self.canvas_shap, self)
-        shap_tab         = QWidget()
-        shap_layout      = QVBoxLayout(shap_tab)
+        
+        # ツールバー＋キャンバスをまとめる
+        shap_tab    = QWidget()
+        shap_layout = QVBoxLayout()
         shap_layout.addWidget(self.toolbar_shap)
         shap_layout.addWidget(self.canvas_shap)
+        shap_tab.setLayout(shap_layout)
         self.tabs.addTab(shap_tab, "SHAP Summary")
-        # HeatMap タブ
-        self.fig_hm      = plt.figure(figsize=(6,4))
-        self.canvas_hm   = FigureCanvas(self.fig_hm)
+        self.fig_hm, _ = plt.subplots(figsize=(6,4))
+        self.canvas_hm = FigureCanvas(self.fig_hm)
         self.tabs.addTab(self.canvas_hm, "HeatMap")
-        # Optuna 結果 タブ
         self.table_optuna = QTableWidget()
         self.tabs.addTab(self.table_optuna, "Optuna 結果")
 
-        # --- Layout配置 ---
+        # Layout
         top = QHBoxLayout()
-        for w in [self.label, self.btn_load, self.btn_train,
-                  self.iter_label, self.iter_spin,
-                  self.depth_label, self.depth_spin,
-                  self.lr_label, self.lr_spin,
-                  QLabel("バインダー:"), self.binder_cb, self.btn_shap_by_binder,
-                  QLabel("X:"), self.heatmap_x_cb, QLabel("Y:"), self.heatmap_y_cb,
-                  self.btn_heatmap, self.btn_allhm, self.btn_optuna, self.btn_scatter]:
+        for w in [self.btn_load, self.btn_train, QLabel("バインダー:"), self.binder_cb,
+                  self.btn_shap_by_binder, QLabel("X軸:"), self.heatmap_x_cb, QLabel("Y軸:"),
+                  self.heatmap_y_cb, self.btn_heatmap, self.btn_allhm,
+                  self.btn_optuna, self.btn_scatter]:
             top.addWidget(w)
         main = QVBoxLayout(self)
+        main.addWidget(self.label)
         main.addLayout(top)
         main.addWidget(self.progress)
         main.addWidget(self.tabs)
 
-        # --- Signals ---
+        # Signals
         self.btn_load.clicked.connect(self.load_file)
         self.btn_train.clicked.connect(self.train_and_shap)
         self.btn_shap_by_binder.clicked.connect(self.draw_shap_by_binder)
@@ -125,7 +121,7 @@ class CatBoostShapApp(QWidget):
         self.btn_optuna.clicked.connect(self.run_optuna)
         self.btn_scatter.clicked.connect(self.draw_optuna_scatter)
 
-        # --- Data holders ---
+        # Data holders
         self.file_path        = None
         self.df               = None
         self.models           = None
@@ -141,42 +137,48 @@ class CatBoostShapApp(QWidget):
         self.sample_X         = None
         self.shap_vals        = None
 
+  
     def _safe_process_events(self):
         QApplication.processEvents()
 
     def load_file(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Excelを開く", "", "Excel Files (*.xlsx *.xls)")
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Excel ファイルを開く", "", "Excel Files (*.xlsx *.xls)"
+        )
         if path:
             self.file_path = path
             self.label.setText(f"選択中: {path.split('/')[-1]}")
             self.btn_train.setEnabled(True)
 
+    # Preprocess the DataFrame
+    # - Convert '2nd.放電容量' to numeric, dropping NaN rows in 'ロード量'
+    # - Fill NaN values with 0
+
     @staticmethod
     def preprocess(df):
-        df['2nd.放電容量'] = pd.to_numeric(df['2nd.放電容量'], errors='coerce')
-        df = df.dropna(subset=['ロード量']).copy()
-        return df.fillna(0)
+        df['2nd.放電容量'] = pd.to_numeric(df['2nd.放電容量'], errors='coerce') # Convert to numeric
+        df = df.dropna(subset=['ロード量']).copy()# Drop rows with NaN in 'ロード量'
+        return df.fillna(0)# Fill NaN values with 0
+        
 
+    # Train the model and calculate SHAP values
     def train_and_shap(self):
         try:
-            self.progress.setValue(5)
-            # ハイパラ取得
-            iters = self.iter_spin.value()
-            depth = self.depth_spin.value()
-            lr    = self.lr_spin.value()
-
-            # データ読み込み
+            self.progress.setValue(5) 
             df = pd.read_excel(self.file_path, sheet_name="Raw_Data")
             df = self.preprocess(df)
+            #dfを全行表示
+            print(df)            
 
-            # カテゴリセット生成
-            self.unique_solvents = sorted({v for c in ['溶媒1','溶媒2','溶媒3'] for v in df[c].unique() if str(v)!='0'})
+            # 溶媒1, 溶媒2, 溶媒3 のユニークな値を取得
+            self.unique_solvents = sorted({v for c in ('溶媒1','溶媒2','溶媒3') for v in df[c].unique() if str(v)!='0'})
             if len(self.unique_solvents)>=3:
                 self.solvent_sets = [','.join(c) for c in itertools.combinations(self.unique_solvents,3)]
             else:
                 fill = self.unique_solvents + ['0']*(3-len(self.unique_solvents))
                 self.solvent_sets = sorted({','.join(sorted(c)) for c in itertools.combinations_with_replacement(fill,3)})
-            self.unique_salts = sorted({v for c in ['塩1','塩2'] for v in df[c].unique() if str(v)!='0'})
+            # 塩1, 塩2 のユニークな値を取得
+            self.unique_salts = sorted({v for c in ('塩1','塩2') for v in df[c].unique() if str(v)!='0'})
             if len(self.unique_salts)>=2:
                 self.salt_sets = [f"{s},0" for s in self.unique_salts] + [','.join(c) for c in itertools.combinations(self.unique_salts,2)]
             else:
@@ -186,83 +188,126 @@ class CatBoostShapApp(QWidget):
 
             # 特徴量エンジニアリング
             for s in self.unique_solvents:
-                df[f'比率_{s}'] = ((df['溶媒1']==s)*df['溶媒1割合'] +
-                                   (df['溶媒2']==s)*df['溶媒2割合'] +
-                                   (df['溶媒3']==s)*df['溶媒3割合'])
+                df[f'比率_{s}'] = ((df['溶媒1']==s)*df['溶媒1割合'] + (df['溶媒2']==s)*df['溶媒2割合'] + (df['溶媒3']==s)*df['溶媒3割合'])
             for s in self.unique_salts:
-                df[f'濃度_{s}'] = ((df['塩1']==s)*df['塩1濃度(M)'] +
-                                   (df['塩2']==s)*df['塩2濃度(M)'])
+                df[f'濃度_{s}'] = ((df['塩1']==s)*df['塩1濃度(M)'] + (df['塩2']==s)*df['塩2濃度(M)'])
             for a in self.unique_additives:
                 df[f'量_{a}'] = (df['添加剤1']==a)*df['添加剤1量(%)']
-            df = df.drop(columns=['溶媒1','溶媒2','溶媒3','溶媒1割合','溶媒2割合','溶媒3割合',
-                                   '塩1','塩2','塩1濃度(M)','塩2濃度(M)','添加剤1','添加剤1量(%)'])
+            drop_cols = ['溶媒1','溶媒2','溶媒3','溶媒1割合','溶媒2割合','溶媒3割合',
+                         '塩1','塩2','塩1濃度(M)','塩2濃度(M)','添加剤1','添加剤1量(%)']
+            df = df.drop(columns=drop_cols)
             self.df = df
-
+            
             # 学習データ準備
-            y = df['2nd.放電容量'].values
+            #目的変数
+            y = df['2nd.放電容量'].values 
             X = df.drop(columns=['2nd.放電容量'])
             self.cat_cols = X.select_dtypes('object').columns.tolist()
             self.cat_idx  = [X.columns.get_loc(c) for c in self.cat_cols]
-            X_tr,X_te,y_tr,y_te = train_test_split(X,y,test_size=0.2,random_state=42)
-            self.X_train  = X_tr
-            pool_tr = Pool(X_tr,y_tr,cat_features=self.cat_idx)
-            pool_te = Pool(X_te,y_te,cat_features=self.cat_idx)
-
+            X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.2, random_state=42)
+            self.X_train = X_tr
+            pool_tr = Pool(X_tr, y_tr, cat_features=self.cat_idx)
+            pool_te = Pool(X_te, y_te, cat_features=self.cat_idx)
             # アンサンブル学習
             self.progress.setValue(15)
-            self.models=[]
+            self.models = []
             for seed in ENSEMBLE_SEEDS:
-                m=CatBoostRegressor(
-                    iterations=iters,
-                    depth=depth,
-                    learning_rate=lr,
-                    loss_function='RMSE',
-                    random_state=seed,
-                    verbose=0
-                )
+                m = CatBoostRegressor(iterations=CATBOOST_ITERS, depth=6, learning_rate=0.05, loss_function='RMSE', random_state=seed, verbose=0)
                 m.fit(pool_tr)
                 self.models.append(m)
                 self._safe_process_events()
-
-            preds = np.mean([m.predict(pool_te) for m in self.models],axis=0)
-            mae, r2 = mean_absolute_error(y_te,preds), r2_score(y_te,preds)
-            QMessageBox.information(self,"モデル評価",f"MAE={mae:.2f} R²={r2:.2f}")
-
-            # SHAP 値計算
+            preds = np.mean([m.predict(pool_te) for m in self.models], axis=0)
+            mae, r2 = mean_absolute_error(y_te, preds), r2_score(y_te, preds)
+            QMessageBox.information(self, "モデル評価", f"MAE = {mae:.2f}    R² = {r2:.2f}")
+            # SHAP値算出
             self.progress.setValue(30)
-            sample_X = self.X_train if SHAP_FULL_SAMPLE or len(self.X_train)<=1000 else self.X_train.sample(1000,random_state=42)
+            sample_X = self.X_train if SHAP_FULL_SAMPLE or len(self.X_train)<=1000 else self.X_train.sample(1000, random_state=42)
             self.sample_X = sample_X
-            self.shap_vals = np.mean([shap.TreeExplainer(m).shap_values(sample_X,check_additivity=False) for m in self.models],axis=0)
+            self.shap_vals = np.mean([shap.TreeExplainer(m).shap_values(sample_X, check_additivity=False) for m in self.models], axis=0)
             self.progress.setValue(60)
-
-            # SHAP 全体描画
+            # SHAP全体表示
             self._render_shap(self.sample_X, self.shap_vals)
-
-            # Binder候補更新
-            raw = self.sample_X['バインダー'].unique()
-            for b in sorted(raw, key=lambda x: str(x)):
+            # バインダー候補
+            self.binder_cb.clear()
+            for b in sorted(self.sample_X['バインダー'].unique(), key=lambda x: str(x)):
                 self.binder_cb.addItem(str(b))
-            self.btn_shap_by_binder.setEnabled(True)
 
-            # HeatMap候補更新
+            self.btn_shap_by_binder.setEnabled(True)
+            # HeatMap準備
             self.heatmap_x_cb.clear(); self.heatmap_y_cb.clear()
-            for c in self.cat_cols:
-                self.heatmap_x_cb.addItem(c); self.heatmap_y_cb.addItem(c)
+            for c in self.cat_cols: self.heatmap_x_cb.addItem(c); self.heatmap_y_cb.addItem(c)
             self.btn_heatmap.setEnabled(True); self.btn_allhm.setEnabled(True)
             self.btn_optuna.setEnabled(True); self.btn_scatter.setEnabled(True)
             self.progress.setValue(0)
         except Exception as e:
-            QMessageBox.critical(self,"エラー",str(e)); logging.exception(e); self.progress.setValue(0)
+            QMessageBox.critical(self, "エラー", str(e)); logging.exception(e); self.progress.setValue(0)
 
-    def populate_table(self, widget, df):
-        widget.clear()
-        widget.setRowCount(len(df))
-        widget.setColumnCount(len(df.columns))
-        widget.setHorizontalHeaderLabels(df.columns)
-        for i in range(len(df)):
-            for j, col in enumerate(df.columns):
-                widget.setItem(i, j, QTableWidgetItem(str(df.iloc[i, j])))
-        widget.resizeColumnsToContents()
+    def _render_shap(self, X, shap_vals, title="SHAP Summary"):
+        self.fig_shap.clf()
+        ax = self.fig_shap.add_subplot(111)
+        num_cols = X.select_dtypes(include=[np.number]).columns
+        norm = plt.Normalize(X[num_cols].min().min(), X[num_cols].max().max())
+        cmap = plt.get_cmap('viridis')
+        y_positions = []
+        y_labels = []
+        base_idx = 0
+        for i, feat in enumerate(X.columns):
+            if feat == 'バインダー':
+                raw_cats = X['バインダー'].unique()
+                cats = sorted(raw_cats, key=lambda x: str(x))
+                for cat in cats:
+                    mask = (X['バインダー'] == cat)
+                    vals = shap_vals[mask, i]
+                    ax.scatter(vals, np.full_like(vals, base_idx), c='gray', s=10, alpha=0.6)
+                    y_positions.append(base_idx); y_labels.append(f"バインダー={cat}")
+                    base_idx += 1
+            else:
+                vals = shap_vals[:, i]
+                if feat in num_cols:
+                    fvals = X[feat].astype(float).values
+                    ax.scatter(vals, np.full_like(vals, base_idx), c=fvals, cmap=cmap, norm=norm, s=10, alpha=0.6)
+                else:
+                    ax.scatter(vals, np.full_like(vals, base_idx), c='gray', s=10, alpha=0.6)
+                y_positions.append(base_idx); y_labels.append(feat)
+                base_idx += 1
+        ax.axvline(0, color='gray')
+        ax.set_yticks(y_positions); ax.set_yticklabels(y_labels)
+        ax.set_xlabel("SHAP value"); ax.set_title(title)
+        self.fig_shap.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap), ax=ax, label='Feature value')
+        self.canvas_shap.draw()
+
+    def draw_shap_by_binder(self):
+        binder = self.binder_cb.currentText()
+        mask = (self.sample_X['バインダー'] == binder)
+        Xb = self.sample_X[mask]; sb = self.shap_vals[mask, :]
+        self._render_shap(Xb, sb, title=f"SHAP for Binder: {binder}")
+
+    def predict_ensemble(self, df_feat):
+        pool = Pool(df_feat, cat_features=self.cat_idx)
+        return np.mean([m.predict(pool) for m in self.models], axis=0)
+
+    def draw_heatmap(self):
+        xcol = self.heatmap_x_cb.currentText(); ycol = self.heatmap_y_cb.currentText()
+        df = self.df.copy(); df['Pred'] = self.predict_ensemble(df.drop(columns=['2nd.放電容量']))
+        pivot = df.pivot_table(values='Pred', index=ycol, columns=xcol, aggfunc=np.mean)
+        self.fig_hm.clf(); ax = self.fig_hm.add_subplot(111)
+        im = ax.imshow(pivot.values, aspect='auto', origin='lower')
+        ax.set_xticks(range(len(pivot.columns))); ax.set_xticklabels(pivot.columns, rotation=90)
+        ax.set_yticks(range(len(pivot.index))); ax.set_yticklabels(pivot.index)
+        ax.set_xlabel(xcol); ax.set_ylabel(ycol)
+        self.fig_hm.colorbar(im, ax=ax, label='Predicted Capacity'); self.canvas_hm.draw()
+
+    def draw_all_heatmaps(self):
+        for i, xcol in enumerate(self.cat_cols):
+            for ycol in self.cat_cols[i+1:]:
+                df = self.df.copy(); df['Pred'] = self.predict_ensemble(df.drop(columns=['2nd.放電容量']))
+                pivot = df.pivot_table(values='Pred', index=ycol, columns=xcol, aggfunc=np.mean)
+                fig, ax = plt.subplots()
+                im = ax.imshow(pivot.values, aspect='auto', origin='lower')
+                ax.set_xticks(range(len(pivot.columns))); ax.set_xticklabels(pivot.columns, rotation=90)
+                ax.set_yticks(range(len(pivot.index))); ax.set_yticklabels(pivot.index)
+                ax.set_xlabel(xcol); ax.set_ylabel(ycol); ax.set_title(f'{ycol} vs {xcol}')
+                fig.colorbar(im, ax=ax, label='Predicted Capacity'); fig.show()
 
     def populate_table(self, widget, df):
         widget.clear()
