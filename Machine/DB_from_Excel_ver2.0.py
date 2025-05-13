@@ -1,3 +1,7 @@
+# -*- coding: utf-8 -*-
+# Excel Data Loader
+# This script loads data from multiple Excel files, processes it, and allows the user to export the data to CSV or Excel format."
+
 import os
 import pandas as pd
 from PyQt5.QtWidgets import (
