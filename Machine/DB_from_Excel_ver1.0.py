@@ -1,139 +1,172 @@
-import sys
 import os
-import json
+import re
 import pandas as pd
 from PyQt5.QtWidgets import (
-    QApplication, QWidget, QPushButton, QVBoxLayout, QHBoxLayout,
-    QFileDialog, QMessageBox, QTableWidget, QTableWidgetItem
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QPushButton,
+    QTableWidget, QTableWidgetItem, QFileDialog, QMessageBox, QProgressBar
 )
-from openpyxl import load_workbook
-from openpyxl.utils import column_index_from_string
 
-
-def process_files(files):
-    """
-    指定されたExcelファイルを読み込み、D列とL列からサイクル数と放電容量を取得し、
-    AU列〜BA列の4行目〜18行目の電極情報をまとめる。
-    結果をDataFrameとして返す。
-    """
-    results = []
-    for file in files:
-        wb = load_workbook(file, data_only=True)
-        ws = wb.active
-
-        data = {}
-        for col_letter, suffix in [('D', 'A'), ('L', 'B')]:
-            col_idx = column_index_from_string(col_letter)
-            cycle = ws.cell(row=3, column=col_idx).value
-            capacity = None
-            for r in range(3, ws.max_row + 2):
-                if ws.cell(row=r, column=col_idx).value is None:
-                    capacity = ws.cell(row=r - 1, column=col_idx).value
-                    break
-            data[f'cycle{suffix}'] = cycle
-            data[f'capacity{suffix}'] = capacity
-
-        # 電極情報をAU〜BA列、4〜18行目から取得
-        start_col = column_index_from_string('AU')
-        end_col = column_index_from_string('BA')
-        electrode = []
-        for r in range(4, 19):
-            row_vals = [ws.cell(row=r, column=c).value for c in range(start_col, end_col + 1)]
-            electrode.append(row_vals)
-        data['electrode_info'] = json.dumps(electrode, ensure_ascii=False)
-        data['filename'] = os.path.basename(file)
-        results.append(data)
-
-    return pd.DataFrame(results)
-
-
-class MainWindow(QWidget):
+class ExcelGUI(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Excel Cycle Capacity Manager")
-        self.df_master = pd.DataFrame(
-            columns=[
-                'filename', 'cycleA', 'capacityA', 'cycleB', 'capacityB', 'electrode_info'
-            ]
-        )
-        self.loaded_files = set()  # 読み込んだファイルパスを管理
+        self.setWindowTitle("Excel Data Loader")
+        self.loaded_files = set()
+        cols = [
+            "filename", "cycleA", "capacityA", "cycleB", "capacityB",
+            "活物質重量", "E/S", "Cレート", "電圧範囲",
+            "試験温度", "合材", "電解液", "セパレータ"
+        ]
+        self.summary_df = pd.DataFrame(columns=cols)
 
-        # ボタンレイアウト
-        btn_layout = QHBoxLayout()
-        self.btn_load = QPushButton("Load Excel Files")
-        self.btn_load.clicked.connect(self.load_files)
-        self.btn_export = QPushButton("Output CSV")
-        self.btn_export.clicked.connect(self.export_csv)
-        btn_layout.addWidget(self.btn_load)
-        btn_layout.addWidget(self.btn_export)
+        central = QWidget()
+        self.setCentralWidget(central)
+        layout = QVBoxLayout(central)
 
-        # テーブルウィジェット
-        self.table = QTableWidget(0, len(self.df_master.columns))
-        self.table.setHorizontalHeaderLabels(self.df_master.columns)
+        # ボタン群
+        self.load_btn = QPushButton("Load Excel Files")
+        self.load_btn.clicked.connect(self.load_data_files)
+        layout.addWidget(self.load_btn)
 
-        # 全体レイアウト
-        layout = QVBoxLayout()
-        layout.addLayout(btn_layout)
+        self.export_csv_btn = QPushButton("Output CSV")
+        self.export_csv_btn.clicked.connect(self.export_csv)
+        layout.addWidget(self.export_csv_btn)
+
+        self.export_excel_btn = QPushButton("Output Excel")
+        self.export_excel_btn.clicked.connect(self.export_excel)
+        layout.addWidget(self.export_excel_btn)
+
+        # プログレスバー
+        self.progress = QProgressBar()
+        self.progress.setVisible(False)
+        layout.addWidget(self.progress)
+
+        # 結果表示テーブル
+        self.table = QTableWidget()
         layout.addWidget(self.table)
-        self.setLayout(layout)
 
-    def load_files(self):
+    def load_data_files(self):
         files, _ = QFileDialog.getOpenFileNames(
-            self,
-            "Select Excel Files",
-            os.getcwd(),
-            "Excel Files (*.xlsx *.xls *.xlsm *.csv)"
+            self, "Select Excel Files", "", "Excel Files (*.xlsx *.xls *.xlsm *csv)"
         )
-        if not files:
+        to_load = [f for f in files if f not in self.loaded_files]
+        if not to_load:
             return
-        # 未読み込みのファイルのみ抽出
-        new_files = [f for f in files if f not in self.loaded_files]
-        if not new_files:
-            QMessageBox.information(self, "Info", "All selected files have already been loaded.")
-            return
-        try:
-            df_new = process_files(new_files)
-            # DataFrame に追加
-            self.df_master = pd.concat([self.df_master, df_new], ignore_index=True)
-            # 読み込んだファイルを登録
-            self.loaded_files.update(new_files)
-            self.update_table()
-        except Exception as e:
-            QMessageBox.critical(self, "Error", str(e))
+
+        # プログレスバー設定
+        self.progress.setVisible(True)
+        self.progress.setMinimum(0)
+        self.progress.setMaximum(len(to_load))
+        self.progress.setValue(0)
+
+        numeric_labels = ["活物質重量", "E/S", "Cレート", "電圧範囲", "試験温度"]
+        num_pattern = re.compile(r'^\d+(\.\d+)?$')
+
+        for count, file in enumerate(to_load, start=1):
+            QApplication.processEvents()  # UI 更新
+
+            self.loaded_files.add(file)
+            df = pd.read_excel(file, header=None)
+
+            # サイクル数と放電容量の取得
+            cycleA = df.iloc[2, 3]
+            disD = df.iloc[:, 3]
+            maskD = disD.iloc[2:].isna()
+            capacityA = disD.iloc[maskD[maskD].index[0] - 1] if maskD.any() else disD.iloc[-1]
+
+            cycleB = df.iloc[2, 11]
+            disL = df.iloc[:, 11]
+            maskL = disL.iloc[2:].isna()
+            capacityB = disL.iloc[maskL[maskL].index[0] - 1] if maskL.any() else disL.iloc[-1]
+
+            # capacityA, capacityB の数値判定（数値以外は None）
+            if not num_pattern.fullmatch(str(capacityA).strip()):
+                capacityA = None
+            if not num_pattern.fullmatch(str(capacityB).strip()):
+                capacityB = None
+
+            # electrode_Info の読み込み＆パース
+            elec_df = df.iloc[3:18, 46:53]
+            elec_flat = elec_df.values.flatten().tolist()
+            labels = [
+                "活物質重量", "E/S", "Cレート", "電圧範囲",
+                "試験温度", "合材", "電解液", "セパレータ"
+            ]
+            parsed = {lbl: None for lbl in labels}
+            for lbl in labels:
+                for i, v in enumerate(elec_flat):
+                    if str(v).strip() == lbl:
+                        for nxt in elec_flat[i+1:]:
+                            if pd.notna(nxt) and str(nxt).strip() != "":
+                                parsed[lbl] = nxt
+                                break
+                        break
+
+            # 数値チェック：指定ラベル以外はそのまま、指定ラベルは数値のみ許可
+            for lbl in numeric_labels:
+                val = parsed.get(lbl)
+                if val is None:
+                    continue
+                if not num_pattern.fullmatch(str(val).strip()):
+                    parsed[lbl] = None
+
+            new_row = {
+                "filename": os.path.basename(file),
+                "cycleA": cycleA,
+                "capacityA": capacityA,
+                "cycleB": cycleB,
+                "capacityB": capacityB,
+                **parsed
+            }
+            self.summary_df = pd.concat(
+                [self.summary_df, pd.DataFrame([new_row])],
+                ignore_index=True
+            )
+
+            # プログレスバー更新
+            self.progress.setValue(count)
+
+        self.progress.setVisible(False)
+        self.update_table()
 
     def update_table(self):
-        self.table.setRowCount(len(self.df_master))
-        for row_idx, (_, row) in enumerate(self.df_master.iterrows()):
-            for col_idx, col in enumerate(self.df_master.columns):
-                item = QTableWidgetItem(str(row[col]))
-                self.table.setItem(row_idx, col_idx, item)
+        df = self.summary_df
+        self.table.setRowCount(len(df))
+        self.table.setColumnCount(len(df.columns))
+        self.table.setHorizontalHeaderLabels(df.columns.tolist())
+        for i, row in df.iterrows():
+            for j, col in enumerate(df.columns):
+                val = row[col]
+                self.table.setItem(i, j, QTableWidgetItem("" if pd.isna(val) else str(val)))
 
     def export_csv(self):
-        if self.df_master.empty:
-            QMessageBox.warning(self, "Warning", "No data to export.")
+        if self.summary_df.empty:
+            QMessageBox.warning(self, "Warning", "出力するデータがありません。")
             return
         path, _ = QFileDialog.getSaveFileName(
-            self,
-            "Save CSV",
-            os.path.join(os.getcwd(), 'summary.csv'),
-            "CSV Files (*.csv)"
+            self, "Save CSV", "summary.csv", "CSV Files (*.csv)"
         )
-        if not path:
+        if path:
+            self.summary_df.to_csv(path, index=False)
+            QMessageBox.information(self, "Saved", f"{path} に出力しました。")
+
+    def export_excel(self):
+        if self.summary_df.empty:
+            QMessageBox.warning(self, "Warning", "出力するデータがありません。")
             return
-        try:
-            self.df_master.to_csv(path, index=False)
-            QMessageBox.information(self, "Saved", f"CSV exported to:\n{path}")
-        except Exception as e:
-            QMessageBox.critical(self, "Error", str(e))
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save Excel", "summary.xlsx", "Excel Files (*.xlsx)"
+        )
+        if path:
+            try:
+                self.summary_df.to_excel(path, index=False, sheet_name="Summary")
+                QMessageBox.information(self, "Saved", f"{path} に出力しました。")
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Excel 出力に失敗しました:\n{e}")
 
-
-if __name__ == '__main__':
+if __name__ == "__main__":
+    import sys
     app = QApplication(sys.argv)
-    window = MainWindow()
-    window.resize(800, 600)
-    window.show()
+    gui = ExcelGUI()
+    gui.resize(800, 600)
+    gui.show()
     sys.exit(app.exec_())
-
-# 実行方法:
-# pip install pandas openpyxl pyqt5
-# python excel_cycle_capacity_gui.py
