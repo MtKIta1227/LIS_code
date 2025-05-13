@@ -1,7 +1,3 @@
-# -*- coding: utf-8 -*-
-# Excel Data Loader
-# This script loads data from multiple Excel files, processes it, and allows the user to export the data to CSV or Excel format."
-
 import os
 import pandas as pd
 from PyQt5.QtWidgets import (
@@ -44,7 +40,7 @@ class ExcelGUI(QMainWindow):
 
     def load_data_files(self):
         files, _ = QFileDialog.getOpenFileNames(
-            self, "Select Excel Files", "", "Excel Files (*.xlsx *.xls *.xlsm *.csv)"
+            self, "Select Excel Files", "", "Excel Files (*.xlsx *.xls *.xlsm *csv)"
         )
         for file in files:
             if file in self.loaded_files:
